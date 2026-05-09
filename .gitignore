@@ -1,0 +1,14 @@
+auto-save-list/
+backups/
+custom.el
+elisp.info.gz:Zone.Identifier
+eln-cache/
+elpa/
+elpy/
+history
+ido.last
+places
+projectile-bookmarks.eld
+recentf
+site-lisp/
+transient/
