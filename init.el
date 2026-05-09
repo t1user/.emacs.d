@@ -282,7 +282,7 @@
 ;; (setq python-shell-interpreter "ipython"
 ;;       python-shell-interpreter-args "-i --simple-prompt")
       
-(setq elpy-rpc-virtualenv-path 'current)
+(setq elpy-rpc-virtualenv-path 'default)
 (setq elpy-rpc-python-command "python")
 (setq elpy-rpc-backend "jedi")
 
@@ -430,3 +430,13 @@
 
 (use-package vterm
   :ensure t)
+
+(use-package auto-virtualenv
+  :load-path "~/.emacs.d/site-lisp/auto-virtualenv/"
+  :config
+  (setq auto-virtualenv-verbose t)
+  (auto-virtualenv-setup))
+
+(projectile-mode +1)
+;; Recommended keymap prefix on Windows/Linux
+(define-key projectile-mode-map (kbd "C-c p") 'projectile-command-map)
