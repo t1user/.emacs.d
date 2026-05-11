@@ -1,444 +1,340 @@
-; init.el --- Emacs configuration
+;;; init.el --- Emacs configuration  -*- lexical-binding: t -*-
 
-;; INSTALL PACKAGES
-;; --------------------------------------
-
-;(setq debug-on-error t)
+;; ========================================
+;; PACKAGE MANAGEMENT
+;; ========================================
 
 (require 'package)
-
-(add-to-list 'package-archives
-       '("melpa" . "http://melpa.org/packages/") t)
-
+(add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
 (package-initialize)
 
-;; If there are no archived package contents, refresh them
 (when (not package-archive-contents)
   (package-refresh-contents))
-
-(defvar myPackages
-  '(
-    ein
-    flycheck
-    magit
-    elpy
-    material-theme
-    py-autopep8
-    ))
-
-
-;; Scans the list in myPackages
-;; If the package listed is not already installed, install it
-(mapc #'(lambda (package)
-    (unless (package-installed-p package)
-      (package-install package)))
-      myPackages)
-
-
-;;;========================================
-;;;       verify this shit
-;;;========================================
-
-;; This is from different source, has to be eventually reconciled with the previous
-;; Initialize the packages, avoiding a re-initialization.
-
-
-(setq server-use-tcp t
-      server-host "0.0.0.0"  ;; Listen on all interfaces, including Tailscale
-      server-port 45678)     ;; Fix the port so it doesn't change on restart
-(server-start)
-
-
-(unless (bound-and-true-p package--initialized)
-  (package-initialize))
-
-;; Make sure `use-package' is available.
-
-(unless (package-installed-p 'use-package)
-  (package-refresh-contents)
-  (package-install 'use-package))
-
-;; Configure `use-package' prior to loading it.
-
-(eval-and-compile
-  (setq use-package-always-ensure nil)
-  (setq use-package-always-defer nil)
-  (setq use-package-always-demand nil)
-  (setq use-package-expand-minimally nil)
-  (setq use-package-enable-imenu-support t)
-  (setq use-package-compute-statistics nil)
-  ;; The following is VERY IMPORTANT.  Write hooks using their real name
-  ;; instead of a shorter version: after-init ==> `after-init-hook'.
-  ;;
-  ;; This is to empower help commands with their contextual awareness,
-  ;; such as `describe-symbol'.
-  (setq use-package-hook-name-suffix nil))
 
 (eval-when-compile
   (require 'use-package))
 
+;; All packages auto-installed unless :ensure nil (built-ins)
+(setq use-package-always-ensure t)
+
 ;; ========================================
-;;       BASIC CUSTOMIZATION
+;; CORE BEHAVIOR
 ;; ========================================
-
-
-(setq inhibit-startup-message t) ;; hide the startup message
-;; (load-theme 'material t) ;; load material theme
-
-;; ======================================================================
-;; This is supposed to prevent terminal from screwing up graphical frames
-
-;; Function to load the material theme only for graphical frames
-(defun load-material-theme (frame)
-  "Load the material theme for graphical frames only."
-  (select-frame frame)
-  (when (display-graphic-p frame)  ; Check if the frame is graphical
-    (load-theme 'material t)))
-
-;; Load theme immediately if not in daemon mode
-(unless (daemonp)
-  (if (display-graphic-p)  ; Check if initial frame is graphical
-      (load-theme 'material t)))
-
-;; Hook for daemon mode to apply theme to new graphical frames
-(when (daemonp)
-  (add-hook 'after-make-frame-functions #'load-material-theme))
-
-;; ======================================================================
 
 (use-package better-defaults
-  :ensure t
   :config
-  (save-place-mode 1))
+  (save-place-mode 1)
+  (ido-mode -1)) ; we use vertico instead
 
-(use-package csv-mode
-  :ensure t
-  )
+(setq inhibit-startup-message t
+      initial-scratch-message ""
+      use-short-answers t
+      calendar-week-start-day 1
+      x-select-enable-clipboard t)
 
-(use-package markdown-mode
-  :ensure t
-  :mode ("README\\.md\\'" . gfm-mode)
-  :init (setq markdown-command "multimarkdown"))
+(global-display-line-numbers-mode 1)
+(electric-pair-mode 1)
+(add-hook 'text-mode-hook #'visual-line-mode)
 
+(recentf-mode 1)
+(setq recentf-max-menu-items 25
+      recentf-max-saved-items 25)
 
-(use-package yaml-mode
-  :ensure t
-  :custom (add-to-list 'auto-mode-alist '("\\.yml\\'" . yaml-mode))
-  )
+(global-set-key (kbd "C-x C-r") #'recentf-open-files)
+(global-set-key (kbd "M-o")     #'other-window)
+(global-set-key (kbd "C-;")     #'comment-line)
 
-(add-hook 'yaml-mode-hook
-      #'(lambda ()
-        (define-key yaml-mode-map "\C-m" 'newline-and-indent)))
+;; ========================================
+;; ENVIRONMENT DETECTION
+;; ========================================
 
+(defun my/wsl-p ()
+  "Return non-nil if running inside WSL."
+  (and (eq system-type 'gnu/linux)
+       (getenv "WSL_DISTRO_NAME")))
+
+;; ========================================
+;; THEME
+;; ========================================
+
+;; ef-themes works correctly in both GUI and terminal.
+;; To browse available themes: M-x ef-themes-select
+
+(use-package ef-themes
+  :config
+  (defun my/apply-theme (&optional frame)
+    (when frame (select-frame frame))
+    (ef-themes-select 'ef-dark))
+  (if (daemonp)
+      (add-hook 'after-make-frame-functions #'my/apply-theme)
+    (my/apply-theme)))
+
+;; ========================================
+;; FONTS & FRAME
+;; ========================================
+
+(add-to-list 'default-frame-alist '(fullscreen . maximized))
+
+(defun my/set-font (&optional frame)
+  "Set font for FRAME, or current frame if nil."
+  (when (display-graphic-p (or frame (selected-frame)))
+    (set-face-attribute 'default (or frame nil)
+                        :family "DejaVu Sans Mono"
+                        :height 113
+                        :weight 'normal
+                        :width 'normal)))
+
+(if (daemonp)
+    (add-hook 'after-make-frame-functions #'my/set-font)
+  (my/set-font))
+
+;; ========================================
+;; MINIBUFFER COMPLETION — VERTICO
+;; ========================================
+
+(use-package vertico
+  :init (vertico-mode)
+  :custom (vertico-cycle t))
+
+;; Persist minibuffer history; vertico surfaces recent items first
+(use-package savehist
+  :ensure nil
+  :init (savehist-mode))
+
+;; Flexible space-separated matching (e.g. "py test" matches "python-pytest")
+(use-package orderless
+  :custom
+  (completion-styles '(orderless basic))
+  (completion-category-overrides '((file (styles basic partial-completion)))))
+
+;; ── IDO (alternative — to switch: comment out the three use-packages above,
+;;         uncomment this block, and remove (ido-mode -1) from better-defaults) ──
+;;
+;; (setq ido-enable-flex-matching t
+;;       ido-everywhere t
+;;       ido-use-filename-at-point 'guess
+;;       ido-create-new-buffer 'always
+;;       ido-file-extensions-order '(".py" ".org" ".txt" ".el" ".cfg" ".toml" ".yaml")
+;;       ido-auto-merge-work-directories-length -1)
+;; (ido-mode 1)
+;; (defun ido-my-keys ()
+;;   (define-key ido-completion-map (kbd "<up>")   'ido-prev-match)
+;;   (define-key ido-completion-map (kbd "<down>") 'ido-next-match))
+;; (add-hook 'ido-setup-hook 'ido-my-keys)
+;; (global-set-key "\M-x"
+;;                 (lambda ()
+;;                   (interactive)
+;;                   (call-interactively
+;;                    (intern (ido-completing-read
+;;                             "M-x " (all-completions "" obarray 'commandp))))))
+
+;; ========================================
+;; MARGINALIA
+;; ========================================
+
+;; Adds annotations to minibuffer candidates (docstrings for M-x,
+;; file sizes for find-file, modes for buffer switching, etc.)
+(use-package marginalia
+  :init (marginalia-mode)
+  :custom (marginalia-annotators
+           '(marginalia-annotators-heavy marginalia-annotators-light nil)))
+
+;; ========================================
+;; WHICH-KEY
+;; ========================================
 
 (use-package which-key
-  :ensure t
+  :config (which-key-mode))
+
+;; ========================================
+;; MAGIT
+;; ========================================
+
+(use-package magit
+  :bind ("C-x g" . magit-status))
+
+;; ========================================
+;; TREE-SITTER
+;; ========================================
+
+;; Auto-installs grammars and maps modes. Falls back gracefully
+;; if a grammar isn't available (e.g. on older WSL install).
+(use-package treesit-auto
+  :custom (treesit-auto-install 'prompt)
   :config
-  (which-key-mode))
+  (treesit-auto-add-to-auto-mode-alist 'all)
+  (global-treesit-auto-mode))
 
-;; keep list of recent files
-;; accessible by C-x C-r
-(recentf-mode 1)
-(setq recentf-max-menu-items 25)
-(setq recentf-max-saved-items 25)
-(global-set-key "\C-x\ \C-r" 'recentf-open-files)
+;; ========================================
+;; IN-BUFFER COMPLETION — CORFU
+;; ========================================
 
+(use-package corfu
+  :custom
+  (corfu-auto t)
+  (corfu-auto-delay 0.2)
+  (corfu-auto-prefix 2)
+  (corfu-cycle t)
+  :init (global-corfu-mode))
 
-;; (global-linum-mode t) ;; enable line numbers globally
-(global-display-line-numbers-mode 1)
-;; (setq make-backup-files nil) ;; don't create backup~ files
-;; (menu-bar-mode -1) ;; Switch off menu
-;; (toggle-scroll-bar -1) ;; Switch off scroll bar
-;; (tool-bar-mode -1) ;; Switch off tool bar
-;; show buffer list in the current window (rather than the other window)
-;; (global-set-key "\C-x\C-b" 'buffer-menu)
+;; Corfu uses child frames which don't work in terminal — this fixes that
+(use-package corfu-terminal
+  :after corfu
+  :config (corfu-terminal-mode 1))
 
-(setq initial-scratch-message "") ;; initial scratch message blank
-(setq use-short-answers t) ;; y and n instead of yes and no
-(add-hook 'text-mode-hook 'visual-line-mode) ;; Sensible line breaking for text modes
-(setq calendar-week-start-day 1) ;; calendar week starts on Monday
-;;(delete-selection-mode t) ;; Start writing straight after deletion
-;; (put 'narrow-to-region 'disabled nil) ; Allows narrowing bound to C-x n n (region) and C-x n w (widen)
+;; ========================================
+;; SYNTAX CHECKING — FLYCHECK
+;; ========================================
 
-;; auto-close parens and quotes
-(electric-pair-mode 1)
+(use-package flycheck
+  :init (global-flycheck-mode))
 
-;; use S-<arrow> to move to window ('meta replaces shift)
-;; (windmove-default-keybindings 'meta)
+;; Bridge between eglot (uses flymake by default) and flycheck
+(use-package flycheck-eglot
+  :after (flycheck eglot)
+  :config (global-flycheck-eglot-mode 1))
 
-(global-set-key (kbd "M-o") 'other-window) ;; use M-o to move window
-;; (global-set-key (kbd "M-o") 'ace-window) ;; use M-o to move window
-;; (setq aw-keys '(?a ?s ?d ?f ?g ?h ?j ?k ?l)) ;; ace-window will use letters instead of numbers
-(global-set-key (kbd "C-;") 'comment-line) ;; this should be standard but somehow isn't
-(setq x-select-enable-clipboard t) ;; use clipboard to copy between apps
+;; ========================================
+;; LSP — EGLOT
+;; ========================================
 
-;; Enable richer annotations using the Marginalia package
+;; Prerequisites — install outside Emacs:
+;;   Python:        pip install pyright
+;;   TypeScript/JS: npm install -g typescript-language-server typescript
 
-(use-package marginalia
-  :pin melpa
-  :ensure t
-  :defer 3
-  :custom (marginalia-annotators '(marginalia-annotators-light))
+(use-package eglot
+  :ensure nil
+  :hook ((python-ts-mode . eglot-ensure)
+         (typescript-mode . eglot-ensure)
+         (js-mode         . eglot-ensure))
   :config
-  (marginalia-mode))
-
-
-(use-package cython-mode
-  :ensure t)
+  (add-to-list 'eglot-server-programs
+               '((python-ts-mode python-mode) . ("pyright-langserver" "--stdio"))))
 
 ;; ========================================
-;;       ORG-MODE CONFIGURATION
+;; PYTHON
 ;; ========================================
 
+(use-package python
+  :ensure nil
+  :custom
+  (python-shell-interpreter "python3")
+  (python-shell-interpreter-args "-i")
+  ;; Workaround for readline completion warning
+  (python-shell-completion-native-enable nil))
 
-(global-set-key (kbd "C-c l") #'org-store-link)
-(global-set-key (kbd "C-c a") #'org-agenda)
-(global-set-key (kbd "C-c c") #'org-capture)
+;; Virtual environment management
+(use-package pyvenv
+  :config
+  (defalias 'workon #'pyvenv-workon))
 
-(setq org-todo-keywords
-      '((sequence "TODO"  "IN PROGRESS" "|" "DONE")))
+;; Auto-detect virtualenv per project (.venv, poetry, pipenv, pyenv)
+;; and activate it via pyvenv
+(use-package pet
+  :config
+  (add-hook 'python-base-mode-hook #'pet-mode -10)
+  (add-hook 'python-base-mode-hook
+            (lambda ()
+              (when-let ((venv (and (fboundp 'pet-virtualenv-root)
+                                   (pet-virtualenv-root))))
+                (pyvenv-activate venv)))))
 
-(setq org-log-done 'time)
+;; Black formatter on save
+(use-package blacken
+  :hook ((python-ts-mode python-mode) . blacken-mode))
 
-(setq org-hide-emphasis-markers t)
-
-(setq org-directory "~/Documents/org/")
-(setq org-agenda-files (list "inbox.org"))
-
-;; (org-babel-do-load-languages
-;;  'org-babel-load-languages
-;;  '((python . t)))
-
-(use-package ox-twbs
-  :ensure t)
-
-;; ========================================
-;;       ORG-ROAM CONFIGURATION
-;; ========================================
-
-;; (use-package org-roam
-;;   :ensure t
-;;   :custom
-;;   (org-roam-directory (file-truename "/path/to/org-files/"))
-;;   :bind (("C-c n l" . org-roam-buffer-toggle)
-;;          ("C-c n f" . org-roam-node-find)
-;;          ("C-c n g" . org-roam-graph)
-;;          ("C-c n i" . org-roam-node-insert)
-;;          ("C-c n c" . org-roam-capture)
-;;          ;; Dailies
-;;          ("C-c n j" . org-roam-dailies-capture-today))
-;;   :config
-;;   ;; If you're using a vertical completion framework, you might want
-;;   ;; a more informative completion interface
-;;   (setq org-roam-node-display-template (concat "${title:*} " (propertize "${tags:10}" 'face 'org-tag)))
-;;   (org-roam-db-autosync-mode)
-;;   ;; If using org-roam-protocol
-;;   (require 'org-roam-protocol))
-
-;; ========================================
-;;     IDO MODE CONFIGURATION
-;; ========================================
-
-(setq ido-enable-flex-matching t)
-(setq ido-everywhere t)
-(ido-mode 1)
-(setq ido-use-filename-at-point 'guess)
-(setq ido-create-new-buffer 'always)
-(setq ido-file-extensions-order '(".py" ".org" ".txt" ".el" ".cfg" ".toml" ".yaml"))
-(setq ido-auto-merge-work-directories-length -1)
-(defun ido-my-keys ()
-  (define-key ido-completion-map (kbd "<up>")   'ido-prev-match)
-  (define-key ido-completion-map (kbd "<down>") 'ido-next-match))
-
-(add-hook 'ido-setup-hook 'ido-my-keys)
-;; use ido in M-x
-(global-set-key "\M-x"
-                (lambda ()
-                  (interactive)
-                  (call-interactively
-                   (intern
-                    (ido-completing-read
-                     "M-x "
-                     (all-completions "" obarray 'commandp))))))
-
-
-
-;; ========================================
-;;     PYTHON CONFIGURATION
-;; ========================================
-
-
-;; all elpy code would have to be include in use-package -> TODO
-;; (use-package elpy
-;;   :ensure t
-;;   :defer t
-;;   :init
-;;   (advice-add 'python-mode :before 'elpy-enable))
-
+;; Import sorting on save (buffer-local hook, python buffers only)
 (use-package py-isort
-  :ensure t)
+  :hook ((python-ts-mode python-mode) .
+         (lambda ()
+           (add-hook 'before-save-hook #'py-isort-before-save nil t))))
 
-(elpy-enable)
-;; elpy to use standard interpreter
-(setq python-shell-interpreter "python3"
-     python-shell-interpreter-args "-i")
-
-;; elpy to use jupyter console
-;; (setq python-shell-interpreter "jupyter"
-;;      python-shell-interpreter-args "console --simple-prompt"
-;;      python-shell-prompt-detect-failure-warning nil)
-;; (add-to-list 'python-shell-completion-native-disabled-interpreters
-;; 	     "jupyter")
-
-;; elpy to use ipython
-;; (setq python-shell-interpreter "ipython"
-;;       python-shell-interpreter-args "-i --simple-prompt")
-      
-(setq elpy-rpc-virtualenv-path 'current)
-(setq elpy-rpc-python-command "python")
-(setq elpy-rpc-backend "jedi")
-
-
-;; use flycheck not flymake with elpy
-(when (require 'flycheck nil t)
-  (setq elpy-modules (delq 'elpy-module-flymake elpy-modules))
-  (add-hook 'elpy-mode-hook 'flycheck-mode))
-
-
-; This configures flycheck to display window always on the bottom of the screen
-;; (add-to-list 'display-buffer-alist
-;;              `(,(rx bos "*Flycheck errors*" eos)
-;;               (display-buffer-reuse-window
-;;                display-buffer-in-side-window)
-;;               (side            . bottom)
-;;               (reusable-frames . visible)
-;;               (window-height   . 0.2)))
-
-;; enable autopep8 formatting on save
-;; (require 'py-autopep8)
-;; (add-hook 'elpy-mode-hook 'py-autopep8-enable-on-save)
-
-;; elpy autoformat code by yapf
-;; (add-hook 'elpy-mode-hook (lambda ()
-;;                            (add-hook 'before-save-hook
-;;                                      'elpy-format-code nil t)))
-
-; ---------------------
-; This was added to have black check code only if black enabled in pyproject.toml
-;; (defun elpy-black-fix-code (&optional only-if-config)
-;;   "Automatically formats Python code with black.
-
-;; if ONLY-IF-CONFIG is non-nil, only fix the code when a '[black]'
-;; section in the project 'pyproject.toml' is found."
-;;   (interactive)
-;;   (when (or (not only-if-config)
-;;             (let ((pyproject (concat (file-name-as-directory
-;;                                       (elpy-project-root))
-;;                                      "pyproject.toml")))
-;;               (and (file-exists-p pyproject)
-;;                    (with-temp-buffer
-;;                      (insert-file-contents pyproject)
-;;                      (search-forward "[black]" nil t)))))
-;;     (elpy--fix-code-with-formatter "fix_code_with_black")))
-;--------------------
-
-;; elpy autoformat code by black
-(add-hook 'elpy-mode-hook (lambda ()
-                            (add-hook 'before-save-hook
-                                      'elpy-black-fix-code nil t)))
-
-(add-hook 'before-save-hook 'py-isort-before-save)
-
-;; set default test runner as pytest
-(setq elpy-test-runner 'elpy-test-pytest-runner)
-
-;; alias for 'workon'
-(defalias 'workon 'pyvenv-workon)
-
-
-;; work-around for bug with python-shell-interpreter
-;; source: https://emacs.stackexchange.com/questions/30082/your-python-shell-interpreter-doesn-t-seem-to-support-readline
-(setq python-shell-completion-native-enable nil)
-
-
-;; ensure jupyter images are displayed
-(setq ein:output-area-inlined-images t)
-
-
-(use-package python-docstring
-  :ensure t)
-
-(add-hook 'python-mode-hook 'python-docstring-mode)
-
-(setq python-fill-docstring-style 'symetric)
-
-;; numpy docstring for python
-;; (use-package numpydoc
-;;   :ensure t
-;;   :defer t
-;;   :after python
-;;   :custom
-;;   (numpydoc-insert-examples-block nil)
-;;   (numpydoc-insertion-style nil)
-;;   (numpydoc-template-long nil)
-;;   :bind (:map elpy-mode-map
-;;               ("C-c C-n" . numpydoc-generate)))
-
-
-;; (add-hook 'python-mode-hook (lambda ()
-;;                                   (require 'sphinx-doc)
-;;                                   (sphinx-doc-mode t)))
-
-;; (setq sphinx-doc-include-types t)
+;; Test runner — C-c t opens dispatch menu
+(use-package python-pytest
+  :bind ((:map python-ts-mode-map ("C-c t" . python-pytest-dispatch))
+         (:map python-mode-map    ("C-c t" . python-pytest-dispatch))))
 
 ;; ========================================
-;;     End Python Config
+;; SNIPPETS & DOCSTRINGS
 ;; ========================================
 
+(use-package yasnippet
+  :config (yas-global-mode 1))
 
+(use-package yasnippet-snippets)
 
-(add-to-list 'default-frame-alist '(fullscreen  . maximized))
+;; Google-style Python docstring
+;; Usage: type 'gdoc' then TAB inside a Python function body
+(with-eval-after-load 'yasnippet
+  (yas-define-snippets
+   'python-ts-mode
+   '(("gdoc"
+      "\"\"\"${1:Summary line.}\n\nArgs:\n    ${2:param}: ${3:Description.}\n\nReturns:\n    ${4:Description.}\n\"\"\"\n$0"
+      "Google-style docstring")))
+  ;; Also available in plain python-mode
+  (yas-define-snippets
+   'python-mode
+   '(("gdoc"
+      "\"\"\"${1:Summary line.}\n\nArgs:\n    ${2:param}: ${3:Description.}\n\nReturns:\n    ${4:Description.}\n\"\"\"\n$0"
+      "Google-style docstring"))))
 
-;; (add-to-list 'default-frame-alist '(font . "Monospace-12"))
+;; ========================================
+;; WEB / JS / TS
+;; ========================================
 
-;; Set default font
-(set-face-attribute 'default nil
-                    :family "DejaVu Sans Mono"
-                    :height 113
-                    :weight 'normal
-                    :width 'normal)
+;; Handles HTML templates, Jinja, Django templates, mixed files
+(use-package web-mode
+  :mode (("\\.html?\\'"  . web-mode)
+         ("\\.jinja2?\\'" . web-mode)
+         ("\\.djhtml\\'" . web-mode)))
 
-;; (defun my-python-noindent-docstring (&optional _previous)
-;;   (if (eq (car (python-indent-context)) :inside-docstring)
-;;       'noindent))
+(use-package typescript-mode
+  :mode "\\.ts\\'")
 
-;; (advice-add 'python-indent-line :before-until #'my-python-noindent-docstring)
+;; js-mode is built-in; treesit-auto maps it to js-ts-mode automatically
 
+;; ========================================
+;; OTHER MODES
+;; ========================================
 
+(use-package yaml-mode
+  :mode "\\.ya?ml\\'"
+  :hook (yaml-mode . (lambda ()
+                       (define-key yaml-mode-map
+                         "\C-m" #'newline-and-indent))))
 
-;; pandoc
-(use-package pandoc-mode
-  :ensure t
-  :hook (markdown-mode . pandoc-mode)
-  :config
-  (define-key pandoc-mode-map (kbd "C-c p p") 'pandoc-run-pandoc)
-  (define-key pandoc-mode-map (kbd "C-c p f") 'pandoc-set-output-format))
-
+(use-package csv-mode)
 
 (use-package markdown-mode
-  :ensure t
-  :mode ("\\.md\\'" . markdown-mode)
-  :init
-  (setq markdown-command "pandoc"))
+  :mode (("README\\.md\\'" . gfm-mode)
+         ("\\.md\\'"        . markdown-mode))
+  :init (setq markdown-command "multimarkdown"))
 
+(use-package cython-mode)
 
-(add-to-list 'load-path "~/.emacs.d/site-lisp/")
-(require 'kivy-mode)
-(add-to-list 'auto-mode-alist '("\\.kv$" . kivy-mode))
+(use-package kivy-mode
+  :mode "\\.kv\\'"
+  :hook (kivy-mode . (lambda ()
+                       (electric-indent-local-mode t))))
 
-(add-hook 'kivy-mode-hook
-          #'(lambda ()
-             (electric-indent-local-mode t)))
+;; ========================================
+;; TERMINAL — VTERM
+;; ========================================
 
-(use-package vterm
-  :ensure t)
+(use-package vterm)
+
+;; ========================================
+;; ORG-MODE
+;; ========================================
+
+(use-package org
+  :ensure nil
+  :bind (("C-c l" . org-store-link)
+         ("C-c a" . org-agenda)
+         ("C-c c" . org-capture))
+  :custom
+  (org-todo-keywords      '((sequence "TODO" "IN PROGRESS" "|" "DONE")))
+  (org-log-done           'time)
+  (org-hide-emphasis-markers t)
+  (org-directory          "~/Documents/org/")
+  (org-agenda-files       (list "~/Documents/org/inbox.org")))
