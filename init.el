@@ -42,6 +42,13 @@
 ;; This is from different source, has to be eventually reconciled with the previous
 ;; Initialize the packages, avoiding a re-initialization.
 
+
+(setq server-use-tcp t
+      server-host "0.0.0.0"  ;; Listen on all interfaces, including Tailscale
+      server-port 45678)     ;; Fix the port so it doesn't change on restart
+(server-start)
+
+
 (unless (bound-and-true-p package--initialized)
   (package-initialize))
 
@@ -123,6 +130,11 @@
       #'(lambda ()
         (define-key yaml-mode-map "\C-m" 'newline-and-indent)))
 
+
+(use-package which-key
+  :ensure t
+  :config
+  (which-key-mode))
 
 ;; keep list of recent files
 ;; accessible by C-x C-r
