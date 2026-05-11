@@ -63,8 +63,10 @@
 (use-package ef-themes
   :config
   (defun my/apply-theme (&optional frame)
-    (when frame (select-frame frame))
-    (ef-themes-select 'ef-dark))
+    (when frame
+      (select-frame frame))
+    (load-theme 'ef-dark t))
+
   (if (daemonp)
       (add-hook 'after-make-frame-functions #'my/apply-theme)
     (my/apply-theme)))
