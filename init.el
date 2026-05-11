@@ -24,7 +24,8 @@
 (use-package better-defaults
   :config
   (save-place-mode 1)
-  (ido-mode -1)) ; we use vertico instead
+  (ido-mode -1))
+  
 
 (setq inhibit-startup-message t
       initial-scratch-message ""
@@ -53,6 +54,18 @@
   (and (eq system-type 'gnu/linux)
        (getenv "WSL_DISTRO_NAME")))
 
+
+;; ========================================
+;; EXEC PATH FROM SHELL
+;; ========================================
+ 
+;; Makes Emacs inherit PATH from your shell, so tools like pyright,
+;; node, and other executables installed outside /usr/bin are found.
+(use-package exec-path-from-shell
+  :config
+  (exec-path-from-shell-initialize))
+
+
 ;; ========================================
 ;; THEME
 ;; ========================================
@@ -65,7 +78,7 @@
   (defun my/apply-theme (&optional frame)
     (when frame
       (select-frame frame))
-    (load-theme 'ef-dark t))
+    (load-theme 'ef-elea-dark t))
 
   (if (daemonp)
       (add-hook 'after-make-frame-functions #'my/apply-theme)
@@ -96,7 +109,20 @@
 
 (use-package vertico
   :init (vertico-mode)
-  :custom (vertico-cycle t))
+  :custom (vertico-cycle t)
+  )
+
+;; Configure directory extension.
+(use-package vertico-directory
+  :after vertico
+  :ensure nil
+  ;; More convenient directory navigation commands
+  :bind (:map vertico-map
+              ("RET" . vertico-directory-enter)
+              ("M-DEL" . vertico-directory-delete-char)
+              ("DEL" . vertico-directory-delete-word))
+  ;; Tidy shadowed file names
+  :hook (rfn-eshadow-update-overlay . vertico-directory-tidy))
 
 ;; Persist minibuffer history; vertico surfaces recent items first
 (use-package savehist
@@ -137,9 +163,7 @@
 ;; Adds annotations to minibuffer candidates (docstrings for M-x,
 ;; file sizes for find-file, modes for buffer switching, etc.)
 (use-package marginalia
-  :init (marginalia-mode)
-  :custom (marginalia-annotators
-           '(marginalia-annotators-heavy marginalia-annotators-light nil)))
+  :init (marginalia-mode))
 
 ;; ========================================
 ;; WHICH-KEY
@@ -228,7 +252,9 @@
 ;; Virtual environment management
 (use-package pyvenv
   :config
-  (defalias 'workon #'pyvenv-workon))
+  (defalias 'workon #'pyvenv-workon)
+  (pyvenv-mode t))
+  
 
 ;; Auto-detect virtualenv per project (.venv, poetry, pipenv, pyenv)
 ;; and activate it via pyvenv
