@@ -70,22 +70,40 @@
 ;; THEME
 ;; ========================================
 
+(use-package material-theme)
+(use-package ef-themes)
+(use-package doom-themes)
+
+(defun my/apply-theme (&optional frame)
+  (when frame (select-frame frame))
+  (if (display-graphic-p (or frame (selected-frame)))
+      (load-theme 'material t)
+    (load-theme 'ef-elea-dark t)))  ; or whichever ef theme works for you
+
+(if (daemonp)
+    (add-hook 'after-make-frame-functions #'my/apply-theme)
+  (my/apply-theme))
+
+
 ;; ef-themes works correctly in both GUI and terminal.
 ;; To browse available themes: M-x ef-themes-select
 
-(use-package ef-themes
-  :config
-  (defun my/apply-theme (&optional frame)
-    (when frame
-      (select-frame frame))
-    (load-theme 'ef-elea-dark t))
+;; This is a simple ef-themes config that can be reverted to
+;; if material-theme plays up
 
-  (if (daemonp)
-      (add-hook 'after-make-frame-functions #'my/apply-theme)
-    (my/apply-theme)))
+;; (use-package ef-themes
+;;   :config
+;;   (defun my/apply-theme (&optional frame)
+;;     (when frame
+;;       (select-frame frame))
+;;     (load-theme 'ef-elea-dark t))
 
-;; alternatvie theme package
-(use-package doom-themes)
+;;   (if (daemonp)
+;;       (add-hook 'after-make-frame-functions #'my/apply-theme)
+;;     (my/apply-theme)))
+
+;; ;; alternatvie theme package
+;; (use-package doom-themes)
 
 ;; theme toggle
 ;; use 'switch theme' with M-x
@@ -225,7 +243,11 @@
 ;; ========================================
 
 (use-package flycheck
-  :init (global-flycheck-mode))
+  :init (global-flycheck-mode)
+  :config
+  ;; checkers can be re-enabled here
+  (setq-local flycheck-disabled-checkers
+              '(python-mypy python-flake8 python-pylint python-pycompile)))
 
 ;; Bridge between eglot (uses flymake by default) and flycheck
 (use-package flycheck-eglot
@@ -270,14 +292,38 @@
 
 ;; Auto-detect virtualenv per project (.venv, poetry, pipenv, pyenv)
 ;; and activate it via pyvenv
+;; (use-package pet
+;;   :config
+;;   (add-hook 'python-base-mode-hook #'pet-mode -10)
+;;   (add-hook 'python-base-mode-hook
+;;             (lambda ()
+;;               (when-let ((venv (and (fboundp 'pet-virtualenv-root)
+;;                                    (pet-virtualenv-root))))
+;;                 (pyvenv-activate venv)))))
+
 (use-package pet
   :config
   (add-hook 'python-base-mode-hook #'pet-mode -10)
-  (add-hook 'python-base-mode-hook
-            (lambda ()
-              (when-let ((venv (and (fboundp 'pet-virtualenv-root)
-                                   (pet-virtualenv-root))))
-                (pyvenv-activate venv)))))
+  (defun my/pet-update-venv ()
+    (when (and (derived-mode-p 'python-base-mode)
+               (fboundp 'pet-virtualenv-root))
+      (when-let* ((venv   (pet-virtualenv-root))
+                  (python (pet-executable-find "python")))
+        (pyvenv-activate venv)
+        (setq-local eglot-workspace-configuration
+                    `(:python (:pythonPath ,python))))))
+  (add-hook 'python-base-mode-hook #'my/pet-update-venv)
+  (add-hook 'window-configuration-change-hook #'my/pet-update-venv))
+
+;; if mypy and other checkers enabled, pet will make sure they're run
+;; only if present in the venv
+;;
+;; (if-let ((mypy (pet-executable-find "mypy")))
+;;     (setq-local flycheck-python-mypy-executable mypy)
+;;   ;; mypy not in venv — disable checker to avoid system mypy/venv incompatibility
+;;   (setq-local flycheck-disabled-checkers
+;;               (append flycheck-disabled-checkers '(python-mypy))))
+
 
 ;; change to this pet config if there are problems
 ;; with automatic start of venvs
