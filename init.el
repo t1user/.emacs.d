@@ -84,6 +84,18 @@
       (add-hook 'after-make-frame-functions #'my/apply-theme)
     (my/apply-theme)))
 
+;; alternatvie theme package
+(use-package doom-themes)
+
+;; theme toggle
+;; use 'switch theme' with M-x
+(defun my/switch-theme (theme)
+  "Disable all active themes then load THEME."
+  (interactive (list (intern (completing-read "Theme: "
+                               (mapcar #'symbol-name (custom-available-themes))))))
+  (mapc #'disable-theme custom-enabled-themes)
+  (load-theme theme t))
+
 ;; ========================================
 ;; FONTS & FRAME
 ;; ========================================
@@ -266,6 +278,22 @@
               (when-let ((venv (and (fboundp 'pet-virtualenv-root)
                                    (pet-virtualenv-root))))
                 (pyvenv-activate venv)))))
+
+;; change to this pet config if there are problems
+;; with automatic start of venvs
+;;
+;; (use-package pet
+;;   :config
+;;   (add-hook 'python-base-mode-hook #'pet-mode -10)
+;;   (add-hook 'python-base-mode-hook
+;;             (lambda ()
+;;               (when-let* ((venv   (and (fboundp 'pet-virtualenv-root)
+;;                                        (pet-virtualenv-root)))
+;;                           (python (and (fboundp 'pet-executable-find)
+;;                                        (pet-executable-find "python"))))
+;;                 (pyvenv-activate venv)
+;;                 (setq-local eglot-workspace-configuration
+;;                             `(:python (:pythonPath ,python)))))))
 
 ;; Black formatter on save
 (use-package blacken
