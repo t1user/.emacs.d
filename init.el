@@ -45,6 +45,11 @@
 (global-set-key (kbd "M-o")     #'other-window)
 (global-set-key (kbd "C-;")     #'comment-line)
 
+
+;; always split windows vertically
+;; (setq split-width-threshold 0
+;;       split-height-threshold nil)
+
 ;; ========================================
 ;; ENVIRONMENT DETECTION
 ;; ========================================
@@ -243,11 +248,7 @@
 ;; ========================================
 
 (use-package flycheck
-  :init (global-flycheck-mode)
-  :config
-  ;; checkers can be re-enabled here
-  (setq-local flycheck-disabled-checkers
-              '(python-mypy python-flake8 python-pylint python-pycompile)))
+  :init (global-flycheck-mode))
 
 ;; Bridge between eglot (uses flymake by default) and flycheck
 (use-package flycheck-eglot
@@ -288,58 +289,13 @@
   :config
   (defalias 'workon #'pyvenv-workon)
   (pyvenv-mode t))
-  
 
 ;; Auto-detect virtualenv per project (.venv, poetry, pipenv, pyenv)
 ;; and activate it via pyvenv
-;; (use-package pet
-;;   :config
-;;   (add-hook 'python-base-mode-hook #'pet-mode -10)
-;;   (add-hook 'python-base-mode-hook
-;;             (lambda ()
-;;               (when-let ((venv (and (fboundp 'pet-virtualenv-root)
-;;                                    (pet-virtualenv-root))))
-;;                 (pyvenv-activate venv)))))
 
 (use-package pet
   :config
-  (add-hook 'python-base-mode-hook #'pet-mode -10)
-  (defun my/pet-update-venv ()
-    (when (and (derived-mode-p 'python-base-mode)
-               (fboundp 'pet-virtualenv-root))
-      (when-let* ((venv   (pet-virtualenv-root))
-                  (python (pet-executable-find "python")))
-        (pyvenv-activate venv)
-        (setq-local eglot-workspace-configuration
-                    `(:python (:pythonPath ,python))))))
-  (add-hook 'python-base-mode-hook #'my/pet-update-venv)
-  (add-hook 'window-configuration-change-hook #'my/pet-update-venv))
-
-;; if mypy and other checkers enabled, pet will make sure they're run
-;; only if present in the venv
-;;
-;; (if-let ((mypy (pet-executable-find "mypy")))
-;;     (setq-local flycheck-python-mypy-executable mypy)
-;;   ;; mypy not in venv — disable checker to avoid system mypy/venv incompatibility
-;;   (setq-local flycheck-disabled-checkers
-;;               (append flycheck-disabled-checkers '(python-mypy))))
-
-
-;; change to this pet config if there are problems
-;; with automatic start of venvs
-;;
-;; (use-package pet
-;;   :config
-;;   (add-hook 'python-base-mode-hook #'pet-mode -10)
-;;   (add-hook 'python-base-mode-hook
-;;             (lambda ()
-;;               (when-let* ((venv   (and (fboundp 'pet-virtualenv-root)
-;;                                        (pet-virtualenv-root)))
-;;                           (python (and (fboundp 'pet-executable-find)
-;;                                        (pet-executable-find "python"))))
-;;                 (pyvenv-activate venv)
-;;                 (setq-local eglot-workspace-configuration
-;;                             `(:python (:pythonPath ,python)))))))
+  (add-hook 'python-base-mode-hook 'pet-mode -10))
 
 ;; Black formatter on save
 (use-package blacken
