@@ -44,11 +44,29 @@
 (global-set-key (kbd "C-x C-r") #'recentf-open-files)
 (global-set-key (kbd "M-o")     #'other-window)
 (global-set-key (kbd "C-;")     #'comment-line)
+(with-eval-after-load 'flyspell
+  (define-key flyspell-mode-map (kbd "C-;") nil))
 
+;; arrows move text around
+;; (use-package outline-indent
+;;   :commands outline-indent-minor-mode
+;;   :custom
+;;   (outline-indent-ellipsis " ▼"))
+
+(use-package drag-stuff
+  :config
+  (drag-stuff-global-mode 1)
+  (drag-stuff-define-keys))
 
 ;; always split windows vertically
 ;; (setq split-width-threshold 0
 ;;       split-height-threshold nil)
+
+
+;; no line numbers in compilation buffers
+(add-hook 'compilation-mode-hook (lambda () (display-line-numbers-mode -1)))
+
+
 
 ;; ========================================
 ;; ENVIRONMENT DETECTION
@@ -66,9 +84,16 @@
  
 ;; Makes Emacs inherit PATH from your shell, so tools like pyright,
 ;; node, and other executables installed outside /usr/bin are found.
+;; (use-package exec-path-from-shell
+;;   :config
+;;   (exec-path-from-shell-initialize))
+
+
 (use-package exec-path-from-shell
   :config
-  (exec-path-from-shell-initialize))
+  (when (not (getenv "EMACS_EXEC_PATH_INITIALIZED"))
+    (exec-path-from-shell-initialize)
+    (setenv "EMACS_EXEC_PATH_INITIALIZED" "1")))
 
 
 ;; ========================================
@@ -154,8 +179,8 @@
   ;; More convenient directory navigation commands
   :bind (:map vertico-map
               ("RET" . vertico-directory-enter)
-              ("M-DEL" . vertico-directory-delete-char)
-              ("DEL" . vertico-directory-delete-word))
+              ("DEL" . vertico-directory-delete-char)
+              ("M-DEL" . vertico-directory-delete-word))
   ;; Tidy shadowed file names
   :hook (rfn-eshadow-update-overlay . vertico-directory-tidy))
 
@@ -212,7 +237,9 @@
 ;; ========================================
 
 (use-package magit
-  :bind ("C-x g" . magit-status))
+  :bind ("C-x g" . magit-status)
+  :hook (magit-mode . visual-line-mode))
+
 
 ;; ========================================
 ;; TREE-SITTER
@@ -225,6 +252,13 @@
   :config
   (treesit-auto-add-to-auto-mode-alist 'all)
   (global-treesit-auto-mode))
+
+
+;; (use-package treesit-auto
+;;   :custom (treesit-auto-install nil)
+;;   :config
+;;   (treesit-auto-add-to-auto-mode-alist 'all)
+;;   (global-treesit-auto-mode))
 
 ;; ========================================
 ;; IN-BUFFER COMPLETION — CORFU
@@ -266,11 +300,20 @@
 (use-package eglot
   :ensure nil
   :hook ((python-ts-mode . eglot-ensure)
+         (python-ts-mode . superword-mode)
+         (python-ts-mode . flyspell-prog-mode)
          (typescript-mode . eglot-ensure)
          (js-mode         . eglot-ensure))
+  :bind (:map eglot-mode-map
+              ("C-c C-e" . eglot-rename)
+              ("C-c C-f" . eglot-format-buffer)
+              ("C-c C-d" . eldoc))
   :config
   (add-to-list 'eglot-server-programs
                '((python-ts-mode python-mode) . ("pyright-langserver" "--stdio"))))
+
+(use-package lua-mode)
+(add-to-list 'auto-mode-alist '("\\.lua\\'" . lua-ts-mode))
 
 ;; ========================================
 ;; PYTHON
@@ -290,27 +333,72 @@
   (defalias 'workon #'pyvenv-workon)
   (pyvenv-mode t))
 
+;; Docstrings
+(use-package python-docstring
+  :hook (python-ts-mode . python-docstring-mode)
+  :config
+  (setq python-docstring-sentence-end-double-space nil))
+
 ;; Auto-detect virtualenv per project (.venv, poetry, pipenv, pyenv)
 ;; and activate it via pyvenv
+;; (use-package pet
+;;   :config
+;;   (add-hook 'python-base-mode-hook 'pet-mode -10))
 
 (use-package pet
   :config
-  (add-hook 'python-base-mode-hook 'pet-mode -10))
+  (add-hook 'python-base-mode-hook 'pet-mode -10)
+  (add-hook 'python-base-mode-hook
+            (lambda ()
+              (when (fboundp 'pet-executable-find)
+                (setq-local python-isort-command
+                            (or (pet-executable-find "isort")
+                                "isort"))))))
+
 
 ;; Black formatter on save
 (use-package blacken
   :hook ((python-ts-mode python-mode) . blacken-mode))
 
 ;; Import sorting on save (buffer-local hook, python buffers only)
+;; (use-package py-isort
+;;   :hook ((python-ts-mode python-mode) .
+;;          (lambda ()
+;;            (add-hook 'before-save-hook #'py-isort-before-save nil t))))
+
+
 (use-package py-isort
   :hook ((python-ts-mode python-mode) .
          (lambda ()
-           (add-hook 'before-save-hook #'py-isort-before-save nil t))))
+           (add-hook 'before-save-hook
+                     (lambda ()
+                       (when (derived-mode-p 'python-base-mode)
+                         (py-isort-buffer)))
+                     -10 t))))
+
 
 ;; Test runner — C-c t opens dispatch menu
+;; (use-package python-pytest
+;;   :bind ((:map python-ts-mode-map ("C-c t" . python-pytest-dispatch))
+;;          (:map python-mode-map    ("C-c t" . python-pytest-dispatch))))
+
+
 (use-package python-pytest
   :bind ((:map python-ts-mode-map ("C-c t" . python-pytest-dispatch))
-         (:map python-mode-map    ("C-c t" . python-pytest-dispatch))))
+         (:map python-mode-map    ("C-c t" . python-pytest-dispatch)))
+  :hook (python-pytest-mode . (lambda () (display-line-numbers-mode -1))))
+
+
+(add-hook 'pyvenv-post-activate-hooks
+          (lambda ()
+            (when (derived-mode-p 'python-base-mode)
+              (when-let ((python (expand-file-name "bin/python" pyvenv-virtual-env)))
+                (when (file-executable-p python)
+                  (setq-local eglot-workspace-configuration
+                              `(:python (:pythonPath ,python)))))
+              (when (eglot-current-server)
+                (eglot-reconnect (eglot-current-server))))))
+
 
 ;; ========================================
 ;; SNIPPETS & DOCSTRINGS
@@ -376,10 +464,14 @@
                        (electric-indent-local-mode t))))
 
 ;; ========================================
-;; TERMINAL — VTERM
+;; TERMINAL — VTERM (and EAT)
 ;; ========================================
 
-(use-package vterm)
+(use-package vterm
+  :hook (vterm-mode . (lambda () (display-line-numbers-mode -1))))
+
+(use-package eat)
+
 
 ;; ========================================
 ;; ORG-MODE
