@@ -273,9 +273,9 @@
   :init (global-corfu-mode))
 
 ;; Corfu uses child frames which don't work in terminal — this fixes that
-(use-package corfu-terminal
-  :after corfu
-  :config (corfu-terminal-mode 1))
+;; (use-package corfu-terminal
+;;   :after corfu
+;;   :config (corfu-terminal-mode 1))
 
 ;; ========================================
 ;; SYNTAX CHECKING — FLYCHECK
@@ -311,7 +311,7 @@
   :config
   (add-to-list 'eglot-server-programs
                '((python-ts-mode python-mode) . ("pyright-langserver" "--stdio"))))
-
+(setq eglot-max-file-watches 524288)
 (use-package lua-mode)
 (add-to-list 'auto-mode-alist '("\\.lua\\'" . lua-ts-mode))
 
