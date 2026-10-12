@@ -8,14 +8,12 @@
 (add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
 (package-initialize)
 
-(when (not package-archive-contents)
-  (package-refresh-contents))
-
 (eval-when-compile
   (require 'use-package))
 
-;; All packages auto-installed unless :ensure nil (built-ins)
-(setq use-package-always-ensure t)
+;; Install missing packages explicitly with M-x package-install.
+;; Startup must not refresh archives or install packages over the network.
+(setq use-package-always-ensure nil)
 
 ;; ========================================
 ;; CORE BEHAVIOR
@@ -23,9 +21,7 @@
 
 (use-package better-defaults
   :config
-  (save-place-mode 1)
   (ido-mode -1))
-  
 
 (setq inhibit-startup-message t
       initial-scratch-message ""
@@ -33,7 +29,8 @@
       calendar-week-start-day 1
       x-select-enable-clipboard t)
 
-(global-display-line-numbers-mode 1)
+(global-display-line-numbers-mode -1)
+(add-hook 'prog-mode-hook #'display-line-numbers-mode)
 (electric-pair-mode 1)
 (add-hook 'text-mode-hook #'visual-line-mode)
 
@@ -47,102 +44,73 @@
 (with-eval-after-load 'flyspell
   (define-key flyspell-mode-map (kbd "C-;") nil))
 
-;; arrows move text around
-;; (use-package outline-indent
-;;   :commands outline-indent-minor-mode
-;;   :custom
-;;   (outline-indent-ellipsis " ▼"))
-
+;; Move text with Alt + arrow keys.
 (use-package drag-stuff
   :config
   (drag-stuff-global-mode 1)
   (drag-stuff-define-keys))
 
-;; always split windows vertically
-;; (setq split-width-threshold 0
-;;       split-height-threshold nil)
-
-
-;; no line numbers in compilation buffers
-(add-hook 'compilation-mode-hook (lambda () (display-line-numbers-mode -1)))
-
-
-
 ;; ========================================
-;; ENVIRONMENT DETECTION
+;; PROJECT DETECTION
 ;; ========================================
 
-(defun my/wsl-p ()
-  "Return non-nil if running inside WSL."
-  (and (eq system-type 'gnu/linux)
-       (getenv "WSL_DISTRO_NAME")))
+(require 'project)
 
+(defun my/project-find-python (directory)
+  "Find a non-VC Python project containing DIRECTORY."
+  (when-let* ((root (locate-dominating-file
+                    directory
+                    (lambda (dir)
+                      (or (file-regular-p (expand-file-name "pyproject.toml" dir))
+                          (file-directory-p (expand-file-name ".venv" dir)))))))
+    (cons 'transient root)))
+
+;; Keep real VC projects first; support uv projects without a repository.
+(add-hook 'project-find-functions #'my/project-find-python 90)
 
 ;; ========================================
 ;; EXEC PATH FROM SHELL
 ;; ========================================
- 
-;; Makes Emacs inherit PATH from your shell, so tools like pyright,
-;; node, and other executables installed outside /usr/bin are found.
-;; (use-package exec-path-from-shell
-;;   :config
-;;   (exec-path-from-shell-initialize))
 
-
+;; Import PATH for GUI/daemon launches, including uv tool and Node executables.
 (use-package exec-path-from-shell
   :config
   (when (not (getenv "EMACS_EXEC_PATH_INITIALIZED"))
     (exec-path-from-shell-initialize)
     (setenv "EMACS_EXEC_PATH_INITIALIZED" "1")))
 
-
 ;; ========================================
 ;; THEME
 ;; ========================================
 
-(use-package material-theme)
-(use-package ef-themes)
-(use-package doom-themes)
+(use-package material-theme
+  :defer t)
+(use-package ef-themes
+  :defer t)
+(use-package doom-themes
+  :defer t)
 
-(defun my/apply-theme (&optional frame)
-  (when frame (select-frame frame))
-  (if (display-graphic-p (or frame (selected-frame)))
-      (load-theme 'material t)
-    (load-theme 'ef-elea-dark t)))  ; or whichever ef theme works for you
-
-(if (daemonp)
-    (add-hook 'after-make-frame-functions #'my/apply-theme)
-  (my/apply-theme))
-
-
-;; ef-themes works correctly in both GUI and terminal.
-;; To browse available themes: M-x ef-themes-select
-
-;; This is a simple ef-themes config that can be reverted to
-;; if material-theme plays up
-
-;; (use-package ef-themes
-;;   :config
-;;   (defun my/apply-theme (&optional frame)
-;;     (when frame
-;;       (select-frame frame))
-;;     (load-theme 'ef-elea-dark t))
-
-;;   (if (daemonp)
-;;       (add-hook 'after-make-frame-functions #'my/apply-theme)
-;;     (my/apply-theme)))
-
-;; ;; alternatvie theme package
-;; (use-package doom-themes)
-
-;; theme toggle
-;; use 'switch theme' with M-x
 (defun my/switch-theme (theme)
   "Disable all active themes then load THEME."
-  (interactive (list (intern (completing-read "Theme: "
-                               (mapcar #'symbol-name (custom-available-themes))))))
+  (interactive (list (intern (completing-read
+                             "Theme: "
+                             (mapcar #'symbol-name (custom-available-themes))
+                             nil t))))
   (mapc #'disable-theme custom-enabled-themes)
   (load-theme theme t))
+
+(defun my/apply-frame-theme (frame)
+  "Select Material when graphical FRAME opens, including daemon clients."
+  (when (display-graphic-p frame)
+    ;; Material computes its palette from the selected display at load time.
+    ;; Reload even if enabled: it may have been loaded from a terminal frame.
+    (with-selected-frame frame
+      (my/switch-theme 'material))))
+
+;; Themes are session-wide: GUI clients select Material for the session,
+;; while new terminal clients leave the chosen theme alone.
+(add-hook 'after-make-frame-functions #'my/apply-frame-theme)
+(my/switch-theme (if (display-graphic-p) 'material 'ef-elea-dark))
 
 ;; ========================================
 ;; FONTS & FRAME
@@ -159,9 +127,8 @@
                         :weight 'normal
                         :width 'normal)))
 
-(if (daemonp)
-    (add-hook 'after-make-frame-functions #'my/set-font)
-  (my/set-font))
+(add-hook 'after-make-frame-functions #'my/set-font)
+(my/set-font)
 
 ;; ========================================
 ;; MINIBUFFER COMPLETION — VERTICO
@@ -169,8 +136,7 @@
 
 (use-package vertico
   :init (vertico-mode)
-  :custom (vertico-cycle t)
-  )
+  :custom (vertico-cycle t))
 
 ;; Configure directory extension.
 (use-package vertico-directory
@@ -184,37 +150,13 @@
   ;; Tidy shadowed file names
   :hook (rfn-eshadow-update-overlay . vertico-directory-tidy))
 
-;; Persist minibuffer history; vertico surfaces recent items first
-(use-package savehist
-  :ensure nil
-  :init (savehist-mode))
+;; better-defaults enables savehist-mode for minibuffer history.
 
 ;; Flexible space-separated matching (e.g. "py test" matches "python-pytest")
 (use-package orderless
   :custom
   (completion-styles '(orderless basic))
   (completion-category-overrides '((file (styles basic partial-completion)))))
-
-;; ── IDO (alternative — to switch: comment out the three use-packages above,
-;;         uncomment this block, and remove (ido-mode -1) from better-defaults) ──
-;;
-;; (setq ido-enable-flex-matching t
-;;       ido-everywhere t
-;;       ido-use-filename-at-point 'guess
-;;       ido-create-new-buffer 'always
-;;       ido-file-extensions-order '(".py" ".org" ".txt" ".el" ".cfg" ".toml" ".yaml")
-;;       ido-auto-merge-work-directories-length -1)
-;; (ido-mode 1)
-;; (defun ido-my-keys ()
-;;   (define-key ido-completion-map (kbd "<up>")   'ido-prev-match)
-;;   (define-key ido-completion-map (kbd "<down>") 'ido-next-match))
-;; (add-hook 'ido-setup-hook 'ido-my-keys)
-;; (global-set-key "\M-x"
-;;                 (lambda ()
-;;                   (interactive)
-;;                   (call-interactively
-;;                    (intern (ido-completing-read
-;;                             "M-x " (all-completions "" obarray 'commandp))))))
 
 ;; ========================================
 ;; MARGINALIA
@@ -230,6 +172,7 @@
 ;; ========================================
 
 (use-package which-key
+  :ensure nil
   :config (which-key-mode))
 
 ;; ========================================
@@ -239,7 +182,6 @@
 (use-package magit
   :bind ("C-x g" . magit-status)
   :hook (magit-mode . visual-line-mode))
-
 
 ;; ========================================
 ;; TREE-SITTER
@@ -253,13 +195,6 @@
   (treesit-auto-add-to-auto-mode-alist 'all)
   (global-treesit-auto-mode))
 
-
-;; (use-package treesit-auto
-;;   :custom (treesit-auto-install nil)
-;;   :config
-;;   (treesit-auto-add-to-auto-mode-alist 'all)
-;;   (global-treesit-auto-mode))
-
 ;; ========================================
 ;; IN-BUFFER COMPLETION — CORFU
 ;; ========================================
@@ -272,38 +207,50 @@
   (corfu-cycle t)
   :init (global-corfu-mode))
 
-;; Corfu uses child frames which don't work in terminal — this fixes that
-;; (use-package corfu-terminal
-;;   :after corfu
-;;   :config (corfu-terminal-mode 1))
+;; Emacs 31 supports terminal child frames; corfu-terminal is unnecessary.
 
 ;; ========================================
 ;; SYNTAX CHECKING — FLYCHECK
 ;; ========================================
 
+;; Use Flycheck's native Eglot bridge, not the separate flycheck-eglot package.
 (use-package flycheck
-  :init (global-flycheck-mode))
-
-;; Bridge between eglot (uses flymake by default) and flycheck
-(use-package flycheck-eglot
-  :after (flycheck eglot)
+  :init (global-flycheck-mode 1)
   :config (global-flycheck-eglot-mode 1))
+
+;; Alternative: comment out Flycheck above, uncomment the following, and restart.
+;; (use-package flymake
+;;   :ensure nil
+;;   :hook (prog-mode . flymake-mode))
+;;
+;; (defun my/elisp-flymake-setup ()
+;;   "Use only non-compiling Lisp diagnostics in untrusted buffers."
+;;   (unless (trusted-content-p)
+;;     (remove-hook 'flymake-diagnostic-functions
+;;                  #'elisp-flymake-byte-compile t)))
+;;
+;; ;; Lisp registers its backends after prog-mode-hook has run.
+;; (add-hook 'emacs-lisp-mode-hook #'my/elisp-flymake-setup)
 
 ;; ========================================
 ;; LSP — EGLOT
 ;; ========================================
 
 ;; Prerequisites — install outside Emacs:
-;;   Python:        pip install pyright
+;;   Python:        uv tool install pyright
 ;;   TypeScript/JS: npm install -g typescript-language-server typescript
 
 (use-package eglot
   :ensure nil
-  :hook ((python-ts-mode . eglot-ensure)
-         (python-ts-mode . superword-mode)
-         (python-ts-mode . flyspell-prog-mode)
+  :hook ((python-base-mode . eglot-ensure)
+         (python-base-mode . superword-mode)
+         (python-base-mode . flyspell-prog-mode)
          (typescript-mode . eglot-ensure)
-         (js-mode         . eglot-ensure))
+         (typescript-ts-base-mode . eglot-ensure)
+         (js-base-mode . eglot-ensure))
+  ;; Preserve the existing allowance for large workspaces.  This does not
+  ;; change the operating system's inotify limits.
+  :custom (eglot-max-file-watches 524288)
   :bind (:map eglot-mode-map
               ("C-c C-e" . eglot-rename)
               ("C-c C-f" . eglot-format-buffer)
@@ -311,9 +258,7 @@
   :config
   (add-to-list 'eglot-server-programs
                '((python-ts-mode python-mode) . ("pyright-langserver" "--stdio"))))
-(setq eglot-max-file-watches 524288)
-(use-package lua-mode)
-(add-to-list 'auto-mode-alist '("\\.lua\\'" . lua-ts-mode))
+(use-package lua-mode :ensure nil)
 
 ;; ========================================
 ;; PYTHON
@@ -335,70 +280,117 @@
 
 ;; Docstrings
 (use-package python-docstring
-  :hook (python-ts-mode . python-docstring-mode)
+  :hook (python-base-mode . python-docstring-mode)
   :config
   (setq python-docstring-sentence-end-double-space nil))
 
-;; Auto-detect virtualenv per project (.venv, poetry, pipenv, pyenv)
-;; and activate it via pyvenv
-;; (use-package pet
-;;   :config
-;;   (add-hook 'python-base-mode-hook 'pet-mode -10))
+(defun my/python-virtualenv-root ()
+  "Find the nearest .venv, stopping at a Python or VC project boundary."
+  (let* ((project (project-current nil))
+         (project-root (and project (expand-file-name (project-root project))))
+         (root (locate-dominating-file
+                default-directory
+                (lambda (dir)
+                  (or (equal (expand-file-name dir) project-root)
+                      (file-regular-p (expand-file-name "pyproject.toml" dir))
+                      (file-directory-p (expand-file-name ".venv" dir))))))
+         (venv (and root (expand-file-name ".venv" root))))
+    (when (and venv (file-directory-p venv))
+      (file-name-as-directory venv))))
 
+(defun my/pet-virtualenv-root (original)
+  "Use the local project's .venv; preserve ORIGINAL for remote buffers."
+  (if (file-remote-p default-directory)
+      (funcall original)
+    (my/python-virtualenv-root)))
+
+(defun my/pet-executable-find (original executable &optional search-globally)
+  "Find EXECUTABLE in .venv, then global PATH; use ORIGINAL remotely."
+  (if (file-remote-p default-directory)
+      (funcall original executable search-globally)
+    (let* ((venv (my/python-virtualenv-root))
+           (local (and venv (expand-file-name executable
+                                             (expand-file-name "bin" venv))))
+           (exec-path (default-value 'exec-path)))
+      (or (and local (file-executable-p local) (not (file-directory-p local))
+               local)
+          (when (or search-globally pet-search-globally)
+            ;; Eglot temporarily redirects executable-find through PET.
+            ;; Use PET's saved original finder to avoid recursive lookup.
+            (or (pet--executable-find executable)
+                (and (equal executable "python")
+                     (pet--executable-find "python3"))))))))
+
+(defun my/python-tools-setup ()
+  "Set usable formatter commands and pytest context after PET discovery."
+  (unless (file-remote-p default-directory)
+    (let ((venv (my/python-virtualenv-root)))
+      (setq-local exec-path
+                  (append (and venv (list (expand-file-name "bin" venv)))
+                          (default-value 'exec-path)))
+      (setq-local process-environment
+                  (copy-sequence (default-value 'process-environment)))
+      (when venv
+        (setenv "VIRTUAL_ENV" (directory-file-name venv))
+        (setenv "PATH" (concat (expand-file-name "bin" venv)
+                               path-separator (or (getenv "PATH") ""))))))
+  (setq-local blacken-executable (or (pet-executable-find "black") "black"))
+  ;; python-pytest builds a shell command without quoting the executable.
+  (setq-local python-pytest-executable
+              (shell-quote-argument (or (pet-executable-find "pytest") "pytest")))
+  (unless (project-current nil)
+    (setq-local python-pytest-project-root-override default-directory)
+    (setq-local python-pytest-project-name-override
+                (file-name-nondirectory (directory-file-name default-directory)))
+    (setq-local python-pytest-unsaved-buffers-behavior 'ask-current)))
+
+;; Retain PET's Eglot, REPL, and formatter integration, while
+;; using .venv -> global PATH rather than pre-commit or inherited environments.
 (use-package pet
+  :custom
+  ;; uv configuration belongs at the root or above the current file, not
+  ;; inside an unrelated subtree or the virtualenv's installed packages.
+  (pet-find-file-functions '(pet-find-file-from-project-root
+                             pet-locate-dominating-file))
   :config
-  (add-hook 'python-base-mode-hook 'pet-mode -10)
-  (add-hook 'python-base-mode-hook
-            (lambda ()
-              (when (fboundp 'pet-executable-find)
-                (setq-local python-isort-command
-                            (or (pet-executable-find "isort")
-                                "isort"))))))
+  (advice-add 'pet-virtualenv-root :around #'my/pet-virtualenv-root)
+  (advice-add 'pet-executable-find :around #'my/pet-executable-find)
+  (add-hook 'pet-after-buffer-local-vars-setup #'my/python-tools-setup)
+  (add-hook 'python-base-mode-hook #'pet-mode -10))
 
-
-;; Black formatter on save
+;; Black formatter on save.
 (use-package blacken
-  :hook ((python-ts-mode python-mode) . blacken-mode))
+  :hook (python-base-mode . blacken-mode))
 
-;; Import sorting on save (buffer-local hook, python buffers only)
-;; (use-package py-isort
-;;   :hook ((python-ts-mode python-mode) .
-;;          (lambda ()
-;;            (add-hook 'before-save-hook #'py-isort-before-save nil t))))
+(defun my/py-isort-call-executable (errbuf file)
+  "Sort FILE using the project's isort; send diagnostics to ERRBUF."
+  (let ((executable (or (pet-executable-find "isort") "isort"))
+        (default-directory (py-isort--find-settings-path)))
+    (zerop (apply #'call-process executable
+                  nil errbuf nil file
+                  (concat "--settings-path=" default-directory)
+                  py-isort-options))))
 
+(defun my/python-isort-before-save ()
+  "Sort Python imports before Black, skipping unavailable isort."
+  (when (derived-mode-p 'python-base-mode)
+    (if (pet-executable-find "isort")
+        (py-isort-buffer)
+      (message "Skipping import sorting: isort is not installed"))))
 
+(defun my/python-enable-isort ()
+  "Enable import sorting for the current Python buffer."
+  (add-hook 'before-save-hook #'my/python-isort-before-save -10 t))
+
+;; Adapt the installed legacy wrapper to current isort arguments and paths.
 (use-package py-isort
-  :hook ((python-ts-mode python-mode) .
-         (lambda ()
-           (add-hook 'before-save-hook
-                     (lambda ()
-                       (when (derived-mode-p 'python-base-mode)
-                         (py-isort-buffer)))
-                     -10 t))))
+  :hook (python-base-mode . my/python-enable-isort)
+  :config
+  (advice-add 'py-isort--call-executable :override #'my/py-isort-call-executable))
 
-
-;; Test runner — C-c t opens dispatch menu
-;; (use-package python-pytest
-;;   :bind ((:map python-ts-mode-map ("C-c t" . python-pytest-dispatch))
-;;          (:map python-mode-map    ("C-c t" . python-pytest-dispatch))))
-
-
+;; C-c t opens the test dispatch menu in both Python modes.
 (use-package python-pytest
-  :bind ((:map python-ts-mode-map ("C-c t" . python-pytest-dispatch))
-         (:map python-mode-map    ("C-c t" . python-pytest-dispatch)))
-  :hook (python-pytest-mode . (lambda () (display-line-numbers-mode -1))))
-
-
-(add-hook 'pyvenv-post-activate-hooks
-          (lambda ()
-            (when (derived-mode-p 'python-base-mode)
-              (when-let ((python (expand-file-name "bin/python" pyvenv-virtual-env)))
-                (when (file-executable-p python)
-                  (setq-local eglot-workspace-configuration
-                              `(:python (:pythonPath ,python)))))
-              (when (eglot-current-server)
-                (eglot-reconnect (eglot-current-server))))))
-
+  :bind (:map python-base-mode-map ("C-c t" . python-pytest-dispatch)))
 
 ;; ========================================
 ;; SNIPPETS & DOCSTRINGS
@@ -445,9 +437,7 @@
 
 (use-package yaml-mode
   :mode "\\.ya?ml\\'"
-  :hook (yaml-mode . (lambda ()
-                       (define-key yaml-mode-map
-                         "\C-m" #'newline-and-indent))))
+  :bind (:map yaml-mode-map ("RET" . newline-and-indent)))
 
 (use-package csv-mode)
 
@@ -468,23 +458,7 @@
 ;; ========================================
 
 (use-package vterm
-  :hook (vterm-mode . (lambda () (display-line-numbers-mode -1))))
+  :commands (vterm vterm-other-window))
 
-(use-package eat)
-
-
-;; ========================================
-;; ORG-MODE
-;; ========================================
-
-(use-package org
-  :ensure nil
-  :bind (("C-c l" . org-store-link)
-         ("C-c a" . org-agenda)
-         ("C-c c" . org-capture))
-  :custom
-  (org-todo-keywords      '((sequence "TODO" "IN PROGRESS" "|" "DONE")))
-  (org-log-done           'time)
-  (org-hide-emphasis-markers t)
-  (org-directory          "~/Documents/org/")
-  (org-agenda-files       (list "~/Documents/org/inbox.org")))
+(use-package eat
+  :commands (eat eat-other-window eat-project eat-project-other-window))
