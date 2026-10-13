@@ -266,14 +266,6 @@
           (should (equal (plist-get (plist-get options :python) :pythonPath)
                          python)))))))
 
-(ert-deftest my/theme-switch-disables-previous-theme ()
-  (let ((custom-enabled-themes '(material ef-elea-dark)) disabled loaded)
-    (cl-letf (((symbol-function 'disable-theme) (lambda (theme) (push theme disabled)))
-              ((symbol-function 'load-theme) (lambda (theme &rest _) (setq loaded theme))))
-      (my/switch-theme 'ef-elea-dark))
-    (should (equal disabled '(ef-elea-dark material)))
-    (should (eq loaded 'ef-elea-dark))))
-
 (ert-deftest my/flycheck-uses-native-eglot-integration ()
   (should (bound-and-true-p global-flycheck-mode))
   (should (bound-and-true-p global-flycheck-eglot-mode))
@@ -281,28 +273,8 @@
   (should-not (featurep 'flycheck-eglot))
   (should (memq #'flycheck-eglot--managed-mode-update eglot-managed-mode-hook))
   (should-not (memq #'flymake-mode prog-mode-hook))
-  (should-not (memq #'my/elisp-flymake-setup emacs-lisp-mode-hook))
   (with-temp-buffer
     (emacs-lisp-mode)
     (should-not flymake-mode)))
-
-(ert-deftest my/gui-client-selects-material ()
-  (dolist (themes '((ef-elea-dark) (material)))
-    (let ((custom-enabled-themes themes)
-          (frame (selected-frame)) loaded loaded-frame)
-      (cl-letf (((symbol-function 'display-graphic-p) (lambda (_) t))
-                ((symbol-function 'my/switch-theme)
-                 (lambda (theme)
-                   (setq loaded theme loaded-frame (selected-frame)))))
-        (my/apply-frame-theme frame))
-      (should (eq loaded 'material))
-      (should (eq loaded-frame frame)))))
-
-(ert-deftest my/terminal-client-keeps-current-theme ()
-  (let ((custom-enabled-themes '(material)))
-    (cl-letf (((symbol-function 'display-graphic-p) (lambda (_) nil))
-              ((symbol-function 'my/switch-theme)
-               (lambda (_) (ert-fail "Terminal client should not switch themes"))))
-      (my/apply-frame-theme 'terminal-client))))
 
 ;;; init-tests.el ends here

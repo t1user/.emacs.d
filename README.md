@@ -16,8 +16,7 @@ Built-in libraries and extensions supplied by another package use `:ensure nil`.
 External programs, including language servers and Python formatters, must still
 be installed separately.
 
-Eat, Vterm, and theme libraries load on demand. The initially selected theme
-still loads immediately; unused theme libraries wait until a theme is selected.
+Eat and Vterm load on demand. Ef loads during startup to select `ef-elea-dark`.
 
 `exec-path-from-shell` imports the shell PATH, including executables installed
 through `uv tool`. Global Python tools can be installed explicitly with:
@@ -76,10 +75,6 @@ language-server diagnostics in managed buffers and disabling Flymake there.
 Use `M-x flycheck-next-error` or `M-x flycheck-list-errors` to inspect diagnostics.
 The obsolete separate `flycheck-eglot` package is not used.
 
-The Flymake alternative remains commented out in `init.el`. To switch back,
-comment out the Flycheck block, uncomment the Flymake block and its Lisp setup,
-and restart Emacs.
-
 Pyright retains PET's project interpreter configuration. The existing Eglot
 file-watch allowance is preserved; it does not raise operating-system inotify
 limits.
@@ -89,15 +84,14 @@ Text, terminal, compilation, and pytest output buffers keep them disabled.
 
 ## Frames and themes
 
-GUI startup and graphical `emacsclient` frames automatically select `material`.
-The client hook selects the new GUI frame while reloading Material, because
-Material calculates its palette from the selected display at load time.
-Terminal startup and the daemon's initial frame use `ef-elea-dark`. Themes are
-shared by the session: opening a GUI client selects Material for existing frames
-as well, and opening a terminal client does not switch it back. Use
-`M-x my/switch-theme` to switch explicitly. The explicit DejaVu Sans Mono font
-setup is commented out so graphical frames use Emacs's default font selection.
-Terminal fonts are selected by the terminal emulator.
+Ef and Modus are configured. `ef-elea-dark` is selected at
+startup for both graphical and terminal sessions, including daemon clients.
+Use `M-x modus-themes-select` to choose from both collections, or
+`M-x ef-themes-select` to choose only Ef themes. Themes are shared by all frames
+in the session.
+
+Graphical frames use DejaVu Sans Mono at 11.3 points through the standard
+`default` face setting. Terminal fonts are selected by the terminal emulator.
 
 ## Validation
 

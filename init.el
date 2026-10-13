@@ -75,53 +75,21 @@
 ;; THEME
 ;; ========================================
 
-(use-package material-theme
-  :defer t)
 (use-package ef-themes
-  :defer t)
-(use-package doom-themes
-  :defer t)
+  :config
+  (ef-themes-load-theme 'ef-elea-dark))
 
-(defun my/switch-theme (theme)
-  "Disable all active themes then load THEME."
-  (interactive (list (intern (completing-read
-                             "Theme: "
-                             (mapcar #'symbol-name (custom-available-themes))
-                             nil t))))
-  (mapc #'disable-theme custom-enabled-themes)
-  (load-theme theme t))
-
-(defun my/apply-frame-theme (frame)
-  "Select Material when graphical FRAME opens, including daemon clients."
-  (when (display-graphic-p frame)
-    ;; Material computes its palette from the selected display at load time.
-    ;; Reload even if enabled: it may have been loaded from a terminal frame.
-    (with-selected-frame frame
-      (my/switch-theme 'material))))
-
-;; Themes are session-wide: GUI clients select Material for the session,
-;; while new terminal clients leave the chosen theme alone.
-(add-hook 'after-make-frame-functions #'my/apply-frame-theme)
-(my/switch-theme (if (display-graphic-p) 'material 'ef-elea-dark))
+(use-package modus-themes
+  :after ef-themes
+  :config
+  (modus-themes-include-derivatives-mode 1))
 
 ;; ========================================
 ;; FONTS & FRAME
 ;; ========================================
 
 (add-to-list 'default-frame-alist '(fullscreen . maximized))
-
-;; Try Emacs's default font before choosing an explicit font again.
-;; (defun my/set-font (&optional frame)
-;;   "Set font for FRAME, or current frame if nil."
-;;   (when (display-graphic-p (or frame (selected-frame)))
-;;     (set-face-attribute 'default (or frame nil)
-;;                         :family "DejaVu Sans Mono"
-;;                         :height 113
-;;                         :weight 'normal
-;;                         :width 'normal)))
-;;
-;; (add-hook 'after-make-frame-functions #'my/set-font)
-;; (my/set-font)
+(set-face-attribute 'default nil :family "DejaVu Sans Mono" :height 113)
 
 ;; ========================================
 ;; MINIBUFFER COMPLETION — VERTICO
@@ -212,20 +180,6 @@
   (global-flycheck-mode 1)
   (global-flycheck-eglot-mode 1))
 
-;; Alternative: comment out Flycheck above, uncomment the following, and restart.
-;; (use-package flymake
-;;   :ensure nil
-;;   :hook (prog-mode . flymake-mode))
-;;
-;; (defun my/elisp-flymake-setup ()
-;;   "Use only non-compiling Lisp diagnostics in untrusted buffers."
-;;   (unless (trusted-content-p)
-;;     (remove-hook 'flymake-diagnostic-functions
-;;                  #'elisp-flymake-byte-compile t)))
-;;
-;; ;; Lisp registers its backends after prog-mode-hook has run.
-;; (add-hook 'emacs-lisp-mode-hook #'my/elisp-flymake-setup)
-
 ;; ========================================
 ;; LSP — EGLOT
 ;; ========================================
@@ -263,8 +217,6 @@
   :custom
   (python-shell-interpreter "python3")
   (python-shell-interpreter-args "-i")
-  ;; Workaround for readline completion warning
-  (python-shell-completion-native-enable nil))
 
 ;; Docstrings
 (use-package python-docstring

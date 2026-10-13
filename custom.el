@@ -11,10 +11,10 @@
      "fffef514346b2a43900e1c7ea2bc7d84cbdd4aa66c1b51946aade4b8d343b55a"
      default))
  '(package-selected-packages
-   '(apheleia better-defaults corfu csv-mode cython-mode doom-themes
+   '(apheleia better-defaults corfu csv-mode cython-mode
                      drag-stuff eat ef-themes exec-path-from-shell
                      flycheck kivy-mode lua-mode magit marginalia
-                     markdown-mode material-theme orderless pet
+                     markdown-mode modus-themes orderless pet
                      python-docstring python-pytest
                      treesit-auto typescript-mode vertico vterm
                      web-mode yaml-mode yasnippet yasnippet-snippets)))
