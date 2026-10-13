@@ -6,7 +6,6 @@
 
 (require 'package)
 (add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
-(package-initialize)
 
 (eval-when-compile
   (require 'use-package))
@@ -37,9 +36,13 @@
 (electric-pair-mode 1)
 (add-hook 'text-mode-hook #'visual-line-mode)
 
-(recentf-mode 1)
-(setq recentf-max-menu-items 25
-      recentf-max-saved-items 25)
+(use-package recentf
+  :ensure nil
+  :custom
+  (recentf-auto-cleanup 10)
+  (recentf-max-menu-items 25)
+  (recentf-max-saved-items 25)
+  :config (recentf-mode 1))
 
 (global-set-key (kbd "C-x C-r") #'recentf-open-files)
 (global-set-key (kbd "M-o")     #'other-window)
@@ -247,9 +250,11 @@
 ;; ========================================
 
 (use-package yasnippet
+  :defer 5
   :config (yas-global-mode 1))
 
-(use-package yasnippet-snippets)
+(use-package yasnippet-snippets
+  :after yasnippet)
 
 ;; Google-style Python docstring
 ;; Usage: type 'gdoc' then TAB inside a Python function body

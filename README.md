@@ -12,11 +12,19 @@ network access to GNU ELPA, NonGNU ELPA, and MELPA and can take longer while
 packages are downloaded and compiled. Subsequent startups reuse installed
 packages; they do not automatically upgrade them.
 
+Emacs activates installed packages automatically before loading `init.el`.
+There is no additional `package-initialize` call in the configuration.
+
 Built-in libraries and extensions supplied by another package use `:ensure nil`.
 External programs, including language servers and Python formatters, must still
 be installed separately.
 
 Eat and Vterm load on demand. Ef loads during startup to select `ef-elea-dark`.
+Yasnippet loads after one second of idle time, followed by its snippet collection.
+Use `M-x yas-insert-snippet` to load and use snippets immediately if needed.
+
+Recent-file tracking is enabled at startup; list cleanup runs after 10 seconds
+of idle time.
 
 `exec-path-from-shell` imports the shell PATH, including executables installed
 through `uv tool`. Global Python tools can be installed explicitly with:

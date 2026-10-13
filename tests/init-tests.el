@@ -14,11 +14,16 @@
                            (expand-file-name "elpa" my/test-config-directory))
       treesit-extra-load-path (list (expand-file-name "tree-sitter" my/test-config-directory)))
 (setenv "EMACS_EXEC_PATH_INITIALIZED" "1")
+;; -Q skips the package activation that normal startup performs before init.el.
+(package-activate-all)
 (cl-letf (((symbol-function 'package-refresh-contents)
            (lambda (&rest _) (error "Unexpected archive refresh during startup")))
           ((symbol-function 'package-install)
            (lambda (&rest _) (error "Unexpected package installation during startup"))))
   (load (expand-file-name "init.el" my/test-config-directory) nil nil t))
+
+(defconst my/test-snippets-loaded-at-startup
+  (or (featurep 'yasnippet) (featurep 'yasnippet-snippets)))
 
 (require 'eglot)
 (require 'pet)
@@ -276,5 +281,22 @@
   (with-temp-buffer
     (emacs-lisp-mode)
     (should-not flymake-mode)))
+
+(ert-deftest my/yasnippet-loads-on-demand-with-python-docstrings ()
+  (should-not my/test-snippets-loaded-at-startup)
+  (require 'yasnippet)
+  (should yas-global-mode)
+  (should (featurep 'yasnippet-snippets))
+  (dolist (mode '(python-mode python-ts-mode))
+    (with-temp-buffer
+      (let ((python-base-mode-hook nil)
+            ;; Both Python tables provide the same docstring template.
+            (yas-prompt-functions '(yas-no-prompt)))
+        (funcall mode)
+        (yas-minor-mode 1)
+        (insert "gdoc")
+        (should (yas-expand))
+        (should (string-match-p "Args:" (buffer-string)))
+        (should (string-match-p "Returns:" (buffer-string)))))))
 
 ;;; init-tests.el ends here
