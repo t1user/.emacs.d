@@ -19,9 +19,12 @@
 ;; CORE BEHAVIOR
 ;; ========================================
 
-(use-package better-defaults
-  :config
-  (ido-mode -1))
+;; Enable Vertico first so better-defaults does not activate Ido.
+(use-package vertico
+  :config (vertico-mode)
+  :custom (vertico-cycle t))
+
+(use-package better-defaults)
 
 (setq inhibit-startup-message t
       initial-scratch-message ""
@@ -94,10 +97,6 @@
 ;; ========================================
 ;; MINIBUFFER COMPLETION — VERTICO
 ;; ========================================
-
-(use-package vertico
-  :config (vertico-mode)
-  :custom (vertico-cycle t))
 
 ;; Configure directory extension.
 (use-package vertico-directory
@@ -216,7 +215,7 @@
   :ensure nil
   :custom
   (python-shell-interpreter "python3")
-  (python-shell-interpreter-args "-i")
+  (python-shell-interpreter-args "-i"))
 
 ;; Docstrings
 (use-package python-docstring
