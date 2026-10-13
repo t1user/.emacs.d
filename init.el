@@ -11,9 +11,9 @@
 (eval-when-compile
   (require 'use-package))
 
-;; Install missing packages explicitly with M-x package-install.
-;; Startup must not refresh archives or install packages over the network.
-(setq use-package-always-ensure nil)
+;; Install missing packages before configuring them, including deferred packages.
+;; Built-in libraries and bundled extensions opt out with :ensure nil.
+(setq use-package-always-ensure t)
 
 ;; ========================================
 ;; CORE BEHAVIOR
@@ -56,17 +56,9 @@
 
 (require 'project)
 
-(defun my/project-find-python (directory)
-  "Find a non-VC Python project containing DIRECTORY."
-  (when-let* ((root (locate-dominating-file
-                    directory
-                    (lambda (dir)
-                      (or (file-regular-p (expand-file-name "pyproject.toml" dir))
-                          (file-directory-p (expand-file-name ".venv" dir)))))))
-    (cons 'transient root)))
-
-;; Keep real VC projects first; support uv projects without a repository.
-(add-hook 'project-find-functions #'my/project-find-python 90)
+;; Recognize Python projects, including projects outside version control.
+(add-to-list 'project-vc-extra-root-markers "pyproject.toml")
+(add-to-list 'project-vc-extra-root-markers ".venv")
 
 ;; ========================================
 ;; EXEC PATH FROM SHELL
@@ -118,24 +110,25 @@
 
 (add-to-list 'default-frame-alist '(fullscreen . maximized))
 
-(defun my/set-font (&optional frame)
-  "Set font for FRAME, or current frame if nil."
-  (when (display-graphic-p (or frame (selected-frame)))
-    (set-face-attribute 'default (or frame nil)
-                        :family "DejaVu Sans Mono"
-                        :height 113
-                        :weight 'normal
-                        :width 'normal)))
-
-(add-hook 'after-make-frame-functions #'my/set-font)
-(my/set-font)
+;; Try Emacs's default font before choosing an explicit font again.
+;; (defun my/set-font (&optional frame)
+;;   "Set font for FRAME, or current frame if nil."
+;;   (when (display-graphic-p (or frame (selected-frame)))
+;;     (set-face-attribute 'default (or frame nil)
+;;                         :family "DejaVu Sans Mono"
+;;                         :height 113
+;;                         :weight 'normal
+;;                         :width 'normal)))
+;;
+;; (add-hook 'after-make-frame-functions #'my/set-font)
+;; (my/set-font)
 
 ;; ========================================
 ;; MINIBUFFER COMPLETION — VERTICO
 ;; ========================================
 
 (use-package vertico
-  :init (vertico-mode)
+  :config (vertico-mode)
   :custom (vertico-cycle t))
 
 ;; Configure directory extension.
@@ -165,7 +158,7 @@
 ;; Adds annotations to minibuffer candidates (docstrings for M-x,
 ;; file sizes for find-file, modes for buffer switching, etc.)
 (use-package marginalia
-  :init (marginalia-mode))
+  :config (marginalia-mode))
 
 ;; ========================================
 ;; WHICH-KEY
@@ -205,7 +198,7 @@
   (corfu-auto-delay 0.2)
   (corfu-auto-prefix 2)
   (corfu-cycle t)
-  :init (global-corfu-mode))
+  :config (global-corfu-mode))
 
 ;; Emacs 31 supports terminal child frames; corfu-terminal is unnecessary.
 
@@ -215,8 +208,9 @@
 
 ;; Use Flycheck's native Eglot bridge, not the separate flycheck-eglot package.
 (use-package flycheck
-  :init (global-flycheck-mode 1)
-  :config (global-flycheck-eglot-mode 1))
+  :config
+  (global-flycheck-mode 1)
+  (global-flycheck-eglot-mode 1))
 
 ;; Alternative: comment out Flycheck above, uncomment the following, and restart.
 ;; (use-package flymake
@@ -258,7 +252,7 @@
   :config
   (add-to-list 'eglot-server-programs
                '((python-ts-mode python-mode) . ("pyright-langserver" "--stdio"))))
-(use-package lua-mode :ensure nil)
+(use-package lua-mode)
 
 ;; ========================================
 ;; PYTHON
@@ -272,121 +266,26 @@
   ;; Workaround for readline completion warning
   (python-shell-completion-native-enable nil))
 
-;; Virtual environment management
-(use-package pyvenv
-  :config
-  (defalias 'workon #'pyvenv-workon)
-  (pyvenv-mode t))
-
 ;; Docstrings
 (use-package python-docstring
   :hook (python-base-mode . python-docstring-mode)
   :config
   (setq python-docstring-sentence-end-double-space nil))
 
-(defun my/python-virtualenv-root ()
-  "Find the nearest .venv, stopping at a Python or VC project boundary."
-  (let* ((project (project-current nil))
-         (project-root (and project (expand-file-name (project-root project))))
-         (root (locate-dominating-file
-                default-directory
-                (lambda (dir)
-                  (or (equal (expand-file-name dir) project-root)
-                      (file-regular-p (expand-file-name "pyproject.toml" dir))
-                      (file-directory-p (expand-file-name ".venv" dir))))))
-         (venv (and root (expand-file-name ".venv" root))))
-    (when (and venv (file-directory-p venv))
-      (file-name-as-directory venv))))
+;; Load formatter definitions before PET assigns buffer-local executable paths.
+(use-package apheleia
+  :demand t
+  :hook (python-base-mode . apheleia-mode)
+  :config
+  (setf (alist-get 'python-mode apheleia-mode-alist) '(isort black)
+        (alist-get 'python-ts-mode apheleia-mode-alist) '(isort black)))
 
-(defun my/pet-virtualenv-root (original)
-  "Use the local project's .venv; preserve ORIGINAL for remote buffers."
-  (if (file-remote-p default-directory)
-      (funcall original)
-    (my/python-virtualenv-root)))
-
-(defun my/pet-executable-find (original executable &optional search-globally)
-  "Find EXECUTABLE in .venv, then global PATH; use ORIGINAL remotely."
-  (if (file-remote-p default-directory)
-      (funcall original executable search-globally)
-    (let* ((venv (my/python-virtualenv-root))
-           (local (and venv (expand-file-name executable
-                                             (expand-file-name "bin" venv))))
-           (exec-path (default-value 'exec-path)))
-      (or (and local (file-executable-p local) (not (file-directory-p local))
-               local)
-          (when (or search-globally pet-search-globally)
-            ;; Eglot temporarily redirects executable-find through PET.
-            ;; Use PET's saved original finder to avoid recursive lookup.
-            (or (pet--executable-find executable)
-                (and (equal executable "python")
-                     (pet--executable-find "python3"))))))))
-
-(defun my/python-tools-setup ()
-  "Set usable formatter commands and pytest context after PET discovery."
-  (unless (file-remote-p default-directory)
-    (let ((venv (my/python-virtualenv-root)))
-      (setq-local exec-path
-                  (append (and venv (list (expand-file-name "bin" venv)))
-                          (default-value 'exec-path)))
-      (setq-local process-environment
-                  (copy-sequence (default-value 'process-environment)))
-      (when venv
-        (setenv "VIRTUAL_ENV" (directory-file-name venv))
-        (setenv "PATH" (concat (expand-file-name "bin" venv)
-                               path-separator (or (getenv "PATH") ""))))))
-  (setq-local blacken-executable (or (pet-executable-find "black") "black"))
-  ;; python-pytest builds a shell command without quoting the executable.
-  (setq-local python-pytest-executable
-              (shell-quote-argument (or (pet-executable-find "pytest") "pytest")))
-  (unless (project-current nil)
-    (setq-local python-pytest-project-root-override default-directory)
-    (setq-local python-pytest-project-name-override
-                (file-name-nondirectory (directory-file-name default-directory)))
-    (setq-local python-pytest-unsaved-buffers-behavior 'ask-current)))
-
-;; Retain PET's Eglot, REPL, and formatter integration, while
-;; using .venv -> global PATH rather than pre-commit or inherited environments.
+;; PET owns environment discovery and tool paths. Run it before Eglot and
+;; formatting modes so they see the selected project's executables.
 (use-package pet
-  :custom
-  ;; uv configuration belongs at the root or above the current file, not
-  ;; inside an unrelated subtree or the virtualenv's installed packages.
-  (pet-find-file-functions '(pet-find-file-from-project-root
-                             pet-locate-dominating-file))
-  :config
-  (advice-add 'pet-virtualenv-root :around #'my/pet-virtualenv-root)
-  (advice-add 'pet-executable-find :around #'my/pet-executable-find)
-  (add-hook 'pet-after-buffer-local-vars-setup #'my/python-tools-setup)
+  :commands pet-mode
+  :init
   (add-hook 'python-base-mode-hook #'pet-mode -10))
-
-;; Black formatter on save.
-(use-package blacken
-  :hook (python-base-mode . blacken-mode))
-
-(defun my/py-isort-call-executable (errbuf file)
-  "Sort FILE using the project's isort; send diagnostics to ERRBUF."
-  (let ((executable (or (pet-executable-find "isort") "isort"))
-        (default-directory (py-isort--find-settings-path)))
-    (zerop (apply #'call-process executable
-                  nil errbuf nil file
-                  (concat "--settings-path=" default-directory)
-                  py-isort-options))))
-
-(defun my/python-isort-before-save ()
-  "Sort Python imports before Black, skipping unavailable isort."
-  (when (derived-mode-p 'python-base-mode)
-    (if (pet-executable-find "isort")
-        (py-isort-buffer)
-      (message "Skipping import sorting: isort is not installed"))))
-
-(defun my/python-enable-isort ()
-  "Enable import sorting for the current Python buffer."
-  (add-hook 'before-save-hook #'my/python-isort-before-save -10 t))
-
-;; Adapt the installed legacy wrapper to current isort arguments and paths.
-(use-package py-isort
-  :hook (python-base-mode . my/python-enable-isort)
-  :config
-  (advice-add 'py-isort--call-executable :override #'my/py-isort-call-executable))
 
 ;; C-c t opens the test dispatch menu in both Python modes.
 (use-package python-pytest

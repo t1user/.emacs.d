@@ -10,7 +10,8 @@
 ;; Load the full configuration, but keep histories and caches in /tmp.
 (setq native-comp-jit-compilation nil
       user-emacs-directory (make-temp-file "emacs-init-tests-" t)
-      package-user-dir (expand-file-name "elpa" my/test-config-directory)
+      package-user-dir (or (getenv "EMACS_TEST_PACKAGE_DIR")
+                           (expand-file-name "elpa" my/test-config-directory))
       treesit-extra-load-path (list (expand-file-name "tree-sitter" my/test-config-directory)))
 (setenv "EMACS_EXEC_PATH_INITIALIZED" "1")
 (cl-letf (((symbol-function 'package-refresh-contents)
@@ -20,7 +21,8 @@
   (load (expand-file-name "init.el" my/test-config-directory) nil nil t))
 
 (require 'eglot)
-(require 'py-isort)
+(require 'pet)
+(require 'apheleia)
 (require 'python-pytest)
 (require 'typescript-mode)
 (require 'typescript-ts-mode)
@@ -50,9 +52,11 @@
   (declare (indent 0) (debug t))
   `(let* ((test-root (make-temp-file "emacs-python-test-" t))
           (default-directory (file-name-as-directory test-root))
+          (process-environment (copy-sequence process-environment))
           ;; Do not inherit unrelated VC markers from the temporary parent.
           (vc-ignore-dir-regexp
            (concat "\\`" (regexp-quote (file-name-directory test-root)) "\\'")))
+     (setenv "VIRTUAL_ENV" nil)
      (unwind-protect (progn ,@body)
        (delete-directory test-root t))))
 
@@ -77,7 +81,7 @@
   (my/test-with-directory
     (my/test-python-project test-root)
     (let ((project (project-current nil)))
-      (should (eq (car project) 'transient))
+      (should (eq (car project) 'vc))
       (should (file-equal-p (project-root project) test-root)))))
 
 (ert-deftest my/python-discovers-venv-without-git-or-pyproject ()
@@ -87,7 +91,7 @@
            (subdir (expand-file-name "src" test-root)))
       (make-directory subdir)
       (let ((default-directory (file-name-as-directory subdir)))
-        (should (eq (car (project-current nil)) 'transient))
+        (should (eq (car (project-current nil)) 'vc))
         (should (equal (pet-executable-find "python") python))))))
 
 (ert-deftest my/python-uses-global-python3-when-python-is-absent ()
@@ -97,7 +101,7 @@
            (exec-path (list bin)))
       (should (equal (pet-executable-find "python") python)))))
 
-(ert-deftest my/python-prefers-local-tools-in-git-and-non-git-projects ()
+(ert-deftest my/python-prefers-project-tools-in-git-and-non-git-projects ()
   (dolist (git '(nil t))
     (my/test-with-directory
       (let* ((bin (my/test-python-project test-root git))
@@ -105,14 +109,19 @@
              (global-bin (expand-file-name "global/bin" test-root))
              (exec-path (cons global-bin exec-path)))
         (my/test-executable global-bin "black")
-        (setenv "VIRTUAL_ENV" "/unrelated/environment")
-        (unwind-protect
-            (cl-letf (((symbol-function 'pet-use-pre-commit-p)
-                       (lambda () (ert-fail "Pre-commit should not select tools"))))
-              (should (equal (pet-executable-find "black") local))
-              (should (equal (pet-virtualenv-root)
-                             (file-name-as-directory (file-name-directory bin)))))
-          (setenv "VIRTUAL_ENV" nil))))))
+        (should (equal (pet-executable-find "black") local))
+        (should (equal (pet-virtualenv-root)
+                       (file-name-as-directory (file-name-directory bin))))))))
+
+(ert-deftest my/python-honors-inherited-virtualenv ()
+  (my/test-with-directory
+    (let* ((bin (my/test-python-project test-root))
+           (inherited (expand-file-name "inherited" test-root))
+           (black (my/test-executable (expand-file-name "bin" inherited) "black")))
+      (my/test-executable bin "black")
+      (setenv "VIRTUAL_ENV" inherited)
+      (should (file-equal-p (pet-virtualenv-root) inherited))
+      (should (equal (pet-executable-find "black") black)))))
 
 (ert-deftest my/python-falls-back-for-missing-local-tool ()
   (my/test-with-directory
@@ -139,15 +148,6 @@
         (should (equal (pet-executable-find "black") global))
         (should-not (pet-executable-find "emacs-test-unavailable-tool"))))))
 
-(ert-deftest my/python-does-not-borrow-parent-environment ()
-  (my/test-with-directory
-    (let* ((outer-bin (my/test-python-project test-root))
-           (inner (expand-file-name "inner" test-root)))
-      (my/test-executable outer-bin "black")
-      (my/test-python-project inner t)
-      (let ((default-directory (file-name-as-directory inner)))
-        (should-not (pet-virtualenv-root))))))
-
 (ert-deftest my/python-discovers-nested-project-environment ()
   (my/test-with-directory
     (my/test-python-project test-root t)
@@ -157,31 +157,24 @@
            (default-directory (file-name-as-directory inner)))
       (should (equal (pet-executable-find "black") local)))))
 
-(ert-deftest my/python-tools-are-buffer-local-and-pytest-path-is-quoted ()
+(ert-deftest my/python-tools-are-buffer-local-through-pet ()
   (my/test-with-directory
     (let* ((root (expand-file-name "project with spaces" test-root))
            (bin (my/test-python-project root))
            (pytest (my/test-executable bin "pytest"))
            (black (my/test-executable bin "black"))
-           (original-exec-path (copy-sequence exec-path))
+           (isort (my/test-executable bin "isort"))
+           (original-formatters (copy-tree apheleia-formatters))
            (original-path (getenv "PATH")))
       (with-temp-buffer
         (setq default-directory (file-name-as-directory root))
-        (my/python-tools-setup)
-        (should (equal blacken-executable black))
-        (should (equal python-pytest-executable (shell-quote-argument pytest)))
-        (should (equal (car exec-path) bin))
-        (should (string-prefix-p (concat bin path-separator) (getenv "PATH"))))
-      (should (equal exec-path original-exec-path))
-      (should (equal (getenv "PATH") original-path)))))
-
-(ert-deftest my/python-outside-project-has-pytest-context ()
-  (my/test-with-directory
-    (with-temp-buffer
-      (my/python-tools-setup)
-      (should (equal (python-pytest--project-root) default-directory))
-      (should (stringp (python-pytest--project-name)))
-      (should (eq python-pytest-unsaved-buffers-behavior 'ask-current)))))
+        (pet-buffer-local-vars-setup)
+        (should (equal python-pytest-executable pytest))
+        (should (equal (car (alist-get 'black apheleia-formatters)) black))
+        (should (equal (car (alist-get 'isort apheleia-formatters)) isort))
+        (should (local-variable-p 'apheleia-formatters))
+        (should (equal (getenv "PATH") original-path)))
+      (should (equal apheleia-formatters original-formatters)))))
 
 (ert-deftest my/python-and-js-mode-hooks-start-eglot ()
   (my/test-with-directory
@@ -199,36 +192,39 @@
             (when (derived-mode-p 'python-base-mode)
               (should pet-mode)
               (should (eq (key-binding (kbd "C-c t")) #'python-pytest-dispatch))
-              (let ((isort (cl-position #'my/python-isort-before-save before-save-hook))
-                    (black (cl-position #'blacken-buffer before-save-hook)))
-                (should isort)
-                (should black)
-                (should (< isort black))))))))))
+              (should apheleia-mode)
+              (should (memq #'apheleia-format-after-save after-save-hook))
+              (should (equal (alist-get major-mode apheleia-mode-alist)
+                             '(isort black))))))))))
 
-(ert-deftest my/isort-uses-project-executable-with-modern-arguments ()
+(ert-deftest my/apheleia-chains-project-isort-and-black ()
   (my/test-with-directory
-    (let* ((bin (my/test-python-project test-root))
-           (local (my/test-executable bin "isort"))
-           invocation)
+    (let* ((root (expand-file-name "project with spaces" test-root))
+           (bin (my/test-python-project root))
+           (isort (my/test-executable bin "isort"))
+           (black (my/test-executable bin "black")))
+      ;; Each fixture consumes its input and produces the next stage's text.
+      (write-region "#!/bin/sh\ncat >/dev/null\nprintf 'import a\\nimport z\\nx=1\\n'\n"
+                    nil isort nil 'silent)
+      (write-region "#!/bin/sh\ninput=$(cat)\ncase \"$input\" in 'import a'*) printf 'import a\\nimport z\\n\\nx = 1\\n';; *) exit 1;; esac\n"
+                    nil black nil 'silent)
       (with-temp-buffer
-        (setq buffer-file-name (expand-file-name "example.py" test-root))
-        (cl-letf (((symbol-function 'call-process)
-                   (lambda (program &rest args)
-                     (setq invocation (cons program args))
-                     0)))
-          (should (py-isort--call-executable nil "/tmp/input.py")))
-        (should (equal (car invocation) local))
-        (should (member "/tmp/input.py" invocation))
-        (should-not (member " " invocation))))))
-
-(ert-deftest my/isort-missing-tool-does-not-block-saving ()
-  (my/test-with-directory
-    (with-temp-buffer
-      (setq major-mode 'python-mode)
-      (cl-letf (((symbol-function 'pet-executable-find) (lambda (&rest _) nil))
-                ((symbol-function 'py-isort-buffer)
-                 (lambda () (ert-fail "Should skip absent isort"))))
-        (my/python-isort-before-save)))))
+        (setq default-directory (file-name-as-directory root)
+              buffer-file-name (expand-file-name "example.py" root))
+        (insert "import z\nimport a\nx=1\n")
+        (pet-buffer-local-vars-setup)
+        (let ((finished nil) result
+              (deadline (+ (float-time) 10)))
+          (apheleia-format-buffer
+           '(isort black) nil
+           :callback (lambda (&rest args)
+                       (setq result (plist-get args :error)
+                             finished t)))
+          (while (and (not finished) (< (float-time) deadline))
+            (accept-process-output nil 0.05))
+          (should finished)
+          (should-not result)
+          (should (equal (buffer-string) "import a\nimport z\n\nx = 1\n")))))))
 
 (ert-deftest my/pyright-contact-keeps-project-python ()
   (my/test-with-directory

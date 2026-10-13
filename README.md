@@ -6,9 +6,15 @@ Generated state, installed packages, and caches remain outside version control.
 
 ## Packages and startup
 
-Startup does not refresh archives or install packages. When setting up a new
-installation, run `M-x package-refresh-contents`, then use `M-x package-install`
-for missing packages named in the `use-package` declarations.
+`use-package` installs missing Emacs packages before configuring them, including
+packages whose loading is deferred. The first startup on a clean machine needs
+network access to GNU ELPA, NonGNU ELPA, and MELPA and can take longer while
+packages are downloaded and compiled. Subsequent startups reuse installed
+packages; they do not automatically upgrade them.
+
+Built-in libraries and extensions supplied by another package use `:ensure nil`.
+External programs, including language servers and Python formatters, must still
+be installed separately.
 
 Eat, Vterm, and theme libraries load on demand. The initially selected theme
 still loads immediately; unused theme libraries wait until a theme is selected.
@@ -27,31 +33,32 @@ in a project's `.venv/bin` directory.
 
 ## Python environments
 
-Local Python buffers use the nearest project's `.venv/bin` executable first,
-then the executable on Emacs's global PATH. Missing `python` falls back to
-`python3`. Discovery stops at a Python project (`pyproject.toml` or `.venv`) or
-VC boundary, so a nested project without its own environment does not borrow
-an outer project's environment.
+PET handles Python environment discovery and sets buffer-local executable paths
+for Eglot, Flycheck, pytest, and Apheleia. Its standard discovery considers a
+cached or inherited `VIRTUAL_ENV`, supported environment managers, and local
+`.venv`, `venv`, or `env` directories. Tool discovery also considers configured
+pre-commit environments, then the selected virtualenv, pyenv, and global
+`exec-path`. The configuration does not override PET's discovery functions or
+activate environments globally with pyvenv.
 
-Git projects retain the VC backend. Non-Git Python projects use the built-in
-transient project backend. Git detection uses Emacs's normal VC project finder;
-there is no additional Git subprocess for validating each lookup.
+Emacs's built-in `project-vc-extra-root-markers` recognizes `pyproject.toml` and
+`.venv`, including projects outside version control. PET uses the standard
+project backend. Unlike the previous custom finder, PET's default virtualenv
+search can find an environment above a nested project, and an inherited
+`VIRTUAL_ENV` can take precedence over a local `.venv`.
 
-PET supplies the existing Eglot, interpreter, and formatter integration.
-For local buffers its environment/tool discovery follows the policy above,
-instead of selecting pre-commit, Conda, Poetry, pyenv, or an inherited
-`VIRTUAL_ENV`. Remote buffers retain PET's original discovery.
+Apheleia runs isort followed by Black asynchronously after saving, then saves
+the formatted result. PET supplies the formatter executable paths before
+formatting modes are enabled. Both tools must be available; a missing or failing
+formatter stops the chain. Configure isort's Black-compatible profile in the
+project's configuration when needed; this setup does not change project
+formatting options. The old Blacken and py-isort save hooks are no longer used.
 
-Saving Python files sorts imports with isort before running Black. The legacy
-isort wrapper is adapted to current command arguments and the discovered
-executable. Import sorting is skipped if isort is absent. Black still needs to
-be installed locally or globally. Configure isort's Black-compatible profile
-in the project's configuration when needed; this Emacs setup does not change
-project formatting options.
-
-`C-c t` opens the pytest dispatch menu in both Python modes. Outside projects,
-pytest runs from the current directory and asks about saving the current buffer.
-Project tool paths, PATH, and environment changes remain buffer-local.
+`C-c t` opens python-pytest's dispatch menu in both Python modes. It uses PET's
+selected pytest executable and the package's standard project and unsaved-buffer
+behavior. The previous special handling for files outside projects and quoting
+pytest executable paths containing spaces has been removed; these cases follow
+the installed python-pytest package's behavior.
 
 To inspect resolution, use `M-:` in the relevant Python buffer:
 
@@ -88,8 +95,9 @@ Material calculates its palette from the selected display at load time.
 Terminal startup and the daemon's initial frame use `ef-elea-dark`. Themes are
 shared by the session: opening a GUI client selects Material for existing frames
 as well, and opening a terminal client does not switch it back. Use
-`M-x my/switch-theme` to switch explicitly. Fonts are applied to new graphical
-frames, including frames created by a non-daemon session.
+`M-x my/switch-theme` to switch explicitly. The explicit DejaVu Sans Mono font
+setup is commented out so graphical frames use Emacs's default font selection.
+Terminal fonts are selected by the terminal emulator.
 
 ## Validation
 
@@ -101,9 +109,12 @@ emacs -Q --batch -l tests/init-tests.el -f ert-run-tests-batch-and-exit
 
 Tests load the configuration with network package operations forbidden and
 histories/caches redirected to temporary storage. They cover Git and non-Git
-projects, executable fallback, environment isolation,
-formatter arguments and ordering, mode hooks, and Eglot contact configuration.
-They suppress language-server startup and grammar installation.
+project markers, PET's inherited-environment precedence and tool paths,
+Apheleia's formatter chain, mode hooks, and Eglot contact configuration. They
+suppress language-server startup and grammar installation. Missing packages
+must be installed before running this offline regression suite.
+
+Set `EMACS_TEST_PACKAGE_DIR` to test a separate package installation.
 
 Restart Emacs, including any daemon, to activate configuration changes in an
 existing session.
