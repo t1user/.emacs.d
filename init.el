@@ -39,7 +39,7 @@
 (use-package recentf
   :ensure nil
   :custom
-  (recentf-auto-cleanup 10)
+  (recentf-auto-cleanup 'mode)
   (recentf-max-menu-items 25)
   (recentf-max-saved-items 25)
   :config (recentf-mode 1))
@@ -89,6 +89,10 @@
   :after ef-themes
   :config
   (modus-themes-include-derivatives-mode 1))
+
+;; potentially change to standard wombat theme
+;; might delete the two above themes packages
+;; (load-theme 'wombat t)
 
 ;; ========================================
 ;; FONTS & FRAME
@@ -307,6 +311,8 @@
   :mode "\\.kv\\'"
   :hook (kivy-mode . (lambda ()
                        (electric-indent-local-mode t))))
+
+(add-to-list 'auto-mode-alist '("\\.service\\'" . conf-unix-mode))
 
 ;; ========================================
 ;; TERMINAL — VTERM (and EAT)
