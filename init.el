@@ -315,7 +315,7 @@
 (add-to-list 'auto-mode-alist '("\\.service\\'" . conf-unix-mode))
 
 ;; ========================================
-;; TERMINAL — VTERM (and EAT)
+;; TERMINAL — VTERM (and EAT and Ghostel)
 ;; ========================================
 
 (use-package vterm
@@ -323,3 +323,6 @@
 
 (use-package eat
   :commands (eat eat-other-window eat-project eat-project-other-window))
+
+(use-package ghostel
+  :ensure t)
