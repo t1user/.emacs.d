@@ -219,6 +219,11 @@
 
 (use-package python
   :ensure nil
+  :hook (python-base-mode .
+         (lambda ()
+           ;; Check prose in comments, not string literals or docstrings.
+           (setq-local flyspell-prog-text-faces
+                       '(font-lock-comment-face font-lock-comment-delimiter-face))))
   :custom
   (python-shell-interpreter "python3")
   (python-shell-interpreter-args "-i"))
