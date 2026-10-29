@@ -202,14 +202,13 @@
          (typescript-mode . eglot-ensure)
          (typescript-ts-base-mode . eglot-ensure)
          (js-base-mode . eglot-ensure))
-  ;; Preserve the existing allowance for large workspaces.  This does not
-  ;; change the operating system's inotify limits.
-  :custom (eglot-max-file-watches 524288)
   :bind (:map eglot-mode-map
               ("C-c C-e" . eglot-rename)
               ("C-c C-f" . eglot-format-buffer)
               ("C-c C-d" . eldoc))
   :config
+  ;; External dependency trees can include entire virtualenvs and caches.
+  (setq eglot-watch-files-outside-project-root nil)
   (add-to-list 'eglot-server-programs
                '((python-ts-mode python-mode) . ("pyright-langserver" "--stdio"))))
 (use-package lua-mode)
