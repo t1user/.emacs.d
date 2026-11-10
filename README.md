@@ -83,9 +83,14 @@ language-server diagnostics in managed buffers and disabling Flymake there.
 Use `M-x flycheck-next-error` or `M-x flycheck-list-errors` to inspect diagnostics.
 The obsolete separate `flycheck-eglot` package is not used.
 
-Pyright retains PET's project interpreter configuration. The existing Eglot
-file-watch allowance is preserved; it does not raise operating-system inotify
-limits.
+Pyright retains PET's project interpreter configuration. Eglot watches files
+inside each project, but ignores requests to watch external dependency trees.
+After changing an external dependency, reconnect the affected server with
+`M-x eglot-reconnect` to refresh its analysis. Eglot uses its default file-watch
+allowance.
+
+Python spellchecking covers comments only; string literals and docstrings are
+excluded.
 
 Line numbers are enabled in programming buffers through `prog-mode-hook`.
 Text, terminal, compilation, and pytest output buffers keep them disabled.

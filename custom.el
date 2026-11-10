@@ -16,11 +16,11 @@
      default))
  '(package-selected-packages
    '(apheleia better-defaults corfu csv-mode cython-mode drag-stuff eat
-              ef-themes exec-path-from-shell flycheck kivy-mode
-              lua-mode magit marginalia markdown-mode orderless pet
-              python-docstring python-pytest treesit-auto
-              typescript-mode vertico vterm web-mode yaml-mode
-              yasnippet yasnippet-snippets)))
+              ef-themes exec-path-from-shell flycheck ghostel
+              kivy-mode lua-mode magit marginalia markdown-mode
+              orderless pet python-docstring python-pytest
+              treesit-auto typescript-mode vertico vterm web-mode
+              yaml-mode yasnippet yasnippet-snippets)))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
